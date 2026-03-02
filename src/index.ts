@@ -3,14 +3,16 @@ import { TokenCredentials } from "@microsoft/teams.api";
 import { App } from "@microsoft/teams.apps";
 import { ConsoleLogger } from "@microsoft/teams.common";
 import { DevtoolsPlugin } from "@microsoft/teams.dev";
+import express from "express";
 import { ManagerPrompt } from "./agent/manager";
+import meetingApiRoutes, { initializeMeetingRoutes } from "./routes/meetingApi";
 import { IDatabase } from "./storage/database";
 import { StorageFactory } from "./storage/storageFactory";
-import { logModelConfigs, validateEnvironment } from "./utils/config";
+import { loadConfig, logModelConfigs, validateEnvironment } from "./utils/config";
 import { createMessageContext } from "./utils/messageContext";
 import { createMessageRecords, finalizePromptResponse } from "./utils/utils";
 
-const logger = new ConsoleLogger("collaborator", { level: "debug" });
+const logger = new ConsoleLogger("missa", { level: "debug" });
 
 const createTokenFactory = () => {
   return async (scope: string | string[], tenantId?: string): Promise<string> => {
@@ -49,6 +51,10 @@ let feedbackStorage: IDatabase;
 
 app.on("message.submit.feedback", async ({ activity }) => {
   try {
+    if (!feedbackStorage) {
+      logger.warn("feedbackStorage not yet initialized — ignoring feedback event");
+      return;
+    }
     const { reaction, feedback: feedbackJson } = activity.value.actionValue;
 
     if (!activity.replyToId) {
@@ -75,6 +81,10 @@ app.on("message.submit.feedback", async ({ activity }) => {
 });
 
 app.on("message", async ({ send, activity, api }) => {
+  if (!storage) {
+    logger.warn("storage not yet initialized — ignoring message event");
+    return;
+  }
   const botMentioned = activity.entities?.some((e) => e.type === "mention");
   const context = botMentioned
     ? await createMessageContext(storage, activity, api)
@@ -110,15 +120,31 @@ app.on("install.add", async ({ send }) => {
 
 (async () => {
   const port = process.env.PORT || process.env.port || 3978;
+  const internalApiPort = process.env.INTERNAL_API_PORT || 3980;
+  
   try {
     validateEnvironment(logger);
     logModelConfigs(logger);
+
+    // Load config
+    const config = loadConfig(logger);
 
     // Initialize storage
     storage = await StorageFactory.createStorage(logger.child("storage"));
     feedbackStorage = storage;
 
     logger.debug("✅ Storage initialized successfully");
+
+    // Initialize and start internal API server for meeting-media-bot communication
+    initializeMeetingRoutes(storage, config, logger.child("meeting-api"));
+    
+    const internalApp = express();
+    internalApp.use(express.json());
+    internalApp.use("/api", meetingApiRoutes);
+    
+    internalApp.listen(internalApiPort, () => {
+      logger.info(`📡 Internal API server started on port ${internalApiPort}`);
+    });
   } catch (error) {
     logger.error("❌ Configuration error:", error);
     process.exit(1);

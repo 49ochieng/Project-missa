@@ -1,4 +1,13 @@
 import { MessageRecord } from "./types";
+import {
+  MeetingRecord,
+  MeetingParticipantRecord,
+  TranscriptChunkRecord,
+  MeetingTranscriptResult,
+  CreateMeetingInput,
+  UpdateMeetingStatusInput,
+  AppendTranscriptChunkInput,
+} from "./meetingTypes";
 
 /**
  * Abstract database interface that both SQLite and MSSQL implementations follow
@@ -34,4 +43,53 @@ export interface IDatabase {
     feedbackJson?: unknown
   ): boolean | Promise<boolean>;
   close(): void | Promise<void>;
+
+  // ============================================================================
+  // MEETING STORAGE METHODS
+  // ============================================================================
+
+  /**
+   * Create or update a meeting record
+   */
+  upsertMeeting(meeting: CreateMeetingInput): Promise<MeetingRecord>;
+
+  /**
+   * Update meeting status (joining, recording, ended, failed)
+   */
+  updateMeetingStatus(input: UpdateMeetingStatusInput): Promise<boolean>;
+
+  /**
+   * Get a meeting by ID
+   */
+  getMeeting(meetingId: string): Promise<MeetingRecord | null>;
+
+  /**
+   * Upsert participants for a meeting
+   */
+  upsertParticipants(meetingId: string, participants: MeetingParticipantRecord[]): Promise<void>;
+
+  /**
+   * Get participants for a meeting
+   */
+  getParticipants(meetingId: string): Promise<MeetingParticipantRecord[]>;
+
+  /**
+   * Append a transcript chunk for real-time transcription
+   */
+  appendTranscriptChunk(input: AppendTranscriptChunkInput): Promise<TranscriptChunkRecord>;
+
+  /**
+   * Get all transcript chunks for a meeting
+   */
+  getTranscriptChunks(meetingId: string): Promise<TranscriptChunkRecord[]>;
+
+  /**
+   * Get full transcript with meeting info and participants
+   */
+  getTranscriptByMeetingId(meetingId: string): Promise<MeetingTranscriptResult | null>;
+
+  /**
+   * Get meetings by status (e.g., all active recordings)
+   */
+  getMeetingsByStatus(status: string): Promise<MeetingRecord[]>;
 }

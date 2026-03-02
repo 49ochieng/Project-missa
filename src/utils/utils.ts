@@ -50,6 +50,7 @@ export function extractTimeRange(
 }
 
 export function createMessageRecords(activities: IMessageActivity[]): MessageRecord[] {
+  if (!activities || activities.length === 0) return [];
   const conversation_id = activities[0].conversation.id; // get conversation ID from user message no matter what
   return activities.map((activity) => ({
     conversation_id: conversation_id,
@@ -59,6 +60,6 @@ export function createMessageRecords(activities: IMessageActivity[]): MessageRec
     content: activity.text?.replace(/<\/?at>/g, "") || "",
     timestamp: activity.timestamp?.toString() || new Date().toISOString(),
     activity_id: activity.id,
-    name: activity.from?.name || "Collaborator",
+    name: activity.from?.name || "Missa",
   }));
 }

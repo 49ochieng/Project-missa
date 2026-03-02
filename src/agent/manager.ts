@@ -14,7 +14,7 @@ export interface ManagerResult {
 // Manager prompt that coordinates all sub-tasks
 // ChatPrompt with a couple of utility functions and delegation functions for each capability
 export class ManagerPrompt {
-  private prompt: ChatPrompt;
+  private prompt!: ChatPrompt;
 
   private isInitialized = false;
 

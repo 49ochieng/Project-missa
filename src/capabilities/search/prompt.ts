@@ -1,5 +1,5 @@
 export const SEARCH_PROMPT = `
-You are the Search capability of the Collaborator. Your role is to help users find specific conversations or messages from their chat history.
+You are the Search capability of the Missa bot. Your role is to help users find specific conversations or messages from their chat history.
 
 You can search through message history to find:
 - Conversations between specific people

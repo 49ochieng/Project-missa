@@ -14,12 +14,12 @@
         "outline": "outline.png"
     },
     "name": {
-        "short": "Project missa${{APP_NAME_SUFFIX}}",
-        "full": "full name for Project missa"
+        "short": "Missa${{APP_NAME_SUFFIX}}",
+        "full": "Missa - Your Intelligent Meeting Assistant"
     },
     "description": {
-        "short": "short description for Project missa",
-        "full": "full description for Project missa"
+        "short": "AI-powered meeting notes and collaboration assistant",
+        "full": "Missa is an intelligent AI assistant that helps you manage meetings, summarize conversations, track action items, and search through chat history."
     },
     "accentColor": "#FFFFFF",
     "bots": [
@@ -31,7 +31,9 @@
                 "groupChat"
             ],
             "supportsFiles": false,
-            "isNotificationOnly": false
+            "isNotificationOnly": false,
+            "supportsCalling": true,
+            "supportsVideo": false
         }
     ],
     "validDomains": [

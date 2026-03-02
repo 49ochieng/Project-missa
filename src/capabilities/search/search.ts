@@ -82,7 +82,8 @@ function createCitationFromRecord(
   const formatted = dateFormat.format(date);
   const preview =
     message.content.length > 120 ? message.content.slice(0, 120) + "..." : message.content;
-  const deepLink = createDeepLink(message.activity_id!, conversationId);
+  const activityId = message.activity_id ?? message.name.replace(/\s+/g, "-").toLowerCase();
+  const deepLink = createDeepLink(activityId, conversationId);
 
   return {
     name: `Message from ${message.name}`,

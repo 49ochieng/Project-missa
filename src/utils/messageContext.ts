@@ -9,12 +9,14 @@ export interface MessageContext {
   text: string;
   conversationId: string;
   userId?: string;
+  userAadId?: string;
   userName: string;
   timestamp: string;
   isPersonalChat: boolean;
   activityId: string;
   members: Array<{ name: string; id: string }>; // Available conversation members
   memory: ConversationMemory; // get convo memory by agent type
+  database: IDatabase; // Database instance for direct storage operations
   startTime: string;
   endTime: string;
   citations: CitationAppearance[];
@@ -30,7 +32,7 @@ async function getConversationParticipantsFromAPI(
     if (Array.isArray(members)) {
       const participants = members.map((member) => ({
         name: member.name || "Unknown",
-        id: member.aadObjectId || member.id,
+        id: member.objectId || member.id,
       }));
       return participants;
     } else {
@@ -52,6 +54,7 @@ export async function createMessageContext(
   const text = activity.text || "";
   const conversationId = `${activity.conversation.id}`;
   const userId = activity.from.id;
+  const userAadId = activity.from.aadObjectId;
   const userName = activity.from.name || "User";
   const timestamp = activity.timestamp?.toString() || "Unknown";
   const isPersonalChat = activity.conversation.conversationType === "personal";
@@ -75,12 +78,14 @@ export async function createMessageContext(
     text,
     conversationId,
     userId,
+    userAadId,
     userName,
     timestamp,
     isPersonalChat,
     activityId,
     members,
     memory,
+    database: storage, // Expose database for capabilities that need direct access
     startTime,
     endTime,
     citations,

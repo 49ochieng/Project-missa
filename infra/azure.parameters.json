@@ -20,8 +20,20 @@
     "AOAI_MODEL": {
       "value": "${{AZURE_OPENAI_DEPLOYMENT_NAME}}"
     },
-    "sqlAdminPassword": {
-      "value": "${{SQL_ADMIN_PASSWORD}}"
+    "location": {
+      "value": "westus2"
+    },
+    "sqlServer": {
+      "value": "${{SQL_SERVER}}"
+    },
+    "sqlDatabase": {
+      "value": "${{SQL_DATABASE}}"
+    },
+    "sqlUsername": {
+      "value": "${{SQL_USERNAME}}"
+    },
+    "sqlPassword": {
+      "value": "${{SQL_PASSWORD}}"
     }
   }
 }

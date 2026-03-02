@@ -7,15 +7,15 @@ export function generateManagerPrompt(capabilities: CapabilityDefinition[]): str
   const capabilityDescriptions = capabilities.map((cap) => `${cap.manager_desc}`).join("\n");
 
   return `
-You are the Manager for the Collaborator — a Microsoft Teams bot. You coordinate requests by deciding which specialized capability should handle each @mention.
+You are the Manager for Missa — a Microsoft Teams bot. You coordinate requests by deciding which specialized capability should handle each @mention.
 
 <AVAILABLE CAPABILITIES>
 ${namesList}
 
 <INSTRUCTIONS>
-1. Analyze the request’s intent and route it to the best-matching capability.
+1. Analyze the request's intent and route it to the best-matching capability.
 2. **If the request includes a time expression**, call calculate_time_range first using the exact phrase (e.g., "last week", "past 2 days").
-3. If no capability applies, respond conversationally and describe what Collaborator *can* help with.
+3. If no capability applies, respond conversationally and describe what Missa *can* help with.
 
 <WHEN TO USE EACH CAPABILITY>
 Use the following descriptions to determine routing logic. Match based on intent, not just keywords.
