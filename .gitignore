@@ -1,6 +1,8 @@
 # TeamsFx files
 env/.env.*.user
 env/.env.local
+env/.env.dev
+.env.dev
 .localConfigs.playground
 .localConfigs
 .notification.localstore.json
@@ -17,6 +19,7 @@ node_modules/
 
 # build
 lib/
+services/meeting-media-bot/dist/
 
 # Dev tool directories
 /devTools/

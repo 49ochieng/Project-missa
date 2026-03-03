@@ -82,6 +82,11 @@ interface JoinMeetingPayload {
 const activeCalls = new Map<string, CallResource>();
 
 /**
+ * Join URLs by call ID (for transcript polling)
+ */
+const callJoinUrls = new Map<string, string>();
+
+/**
  * Join a Teams meeting using the join URL
  * 
  * @param joinUrl - The Teams meeting join URL
@@ -137,8 +142,9 @@ export async function joinMeeting(
   const call = response.data;
   console.log(`[CallManager] Call created: ${call.id}, state: ${call.state}`);
 
-  // Track active call
+  // Track active call and store join URL for transcript polling
   activeCalls.set(call.id, call);
+  callJoinUrls.set(call.id, joinUrl);
 
   return {
     success: true,
@@ -171,6 +177,7 @@ export async function leaveCall(callId: string): Promise<{ success: boolean; err
 
   // Remove from tracking
   activeCalls.delete(callId);
+  callJoinUrls.delete(callId);
   console.log(`[CallManager] Successfully left call: ${callId}`);
 
   return { success: true };
@@ -202,6 +209,13 @@ export function getCall(callId: string): CallResource | undefined {
  */
 export function getActiveCalls(): Map<string, CallResource> {
   return activeCalls;
+}
+
+/**
+ * Get the join URL stored for a call (for transcript polling)
+ */
+export function getJoinUrl(callId: string): string | undefined {
+  return callJoinUrls.get(callId);
 }
 
 /**

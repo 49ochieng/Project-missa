@@ -1,13 +1,13 @@
 {
     "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.24/MicrosoftTeams.schema.json",
     "manifestVersion": "1.24",
-    "version": "1.0.0",
+    "version": "1.0.13",
     "id": "${{TEAMS_APP_ID}}",
     "developer": {
-        "name": "My App, Inc.",
-        "websiteUrl": "https://www.example.com",
-        "privacyUrl": "https://www.example.com/privacy",
-        "termsOfUseUrl": "https://www.example.com/termofuse"
+        "name": "Armely",
+        "websiteUrl": "https://www.armely.com",
+        "privacyUrl": "https://www.armely.com/privacy",
+        "termsOfUseUrl": "https://www.armely.com/terms"
     },
     "icons": {
         "color": "color.png",
@@ -18,40 +18,49 @@
         "full": "Missa - Your Intelligent Meeting Assistant"
     },
     "description": {
-        "short": "AI-powered meeting notes and collaboration assistant",
-        "full": "Missa is an intelligent AI assistant that helps you manage meetings, summarize conversations, track action items, and search through chat history."
+        "short": "AI-powered meeting intelligence assistant",
+        "full": "Missa is an intelligent AI meeting assistant that summarizes conversations, captures action items, and helps teams collaborate more effectively."
     },
-    "accentColor": "#FFFFFF",
+    "accentColor": "#6264A7",
     "bots": [
         {
             "botId": "${{BOT_ID}}",
             "scopes": [
-                "personal",
                 "team",
-                "groupChat"
+                "groupChat",
+                "personal"
             ],
             "supportsFiles": false,
             "isNotificationOnly": false,
-            "supportsCalling": true,
-            "supportsVideo": false
-        }
-    ],
-    "validDomains": [
-        "${{BOT_DOMAIN}}",
-        "*.botframework.com"
-    ],
-    "webApplicationInfo": {
-        "id": "${{BOT_ID}}",
-        "resource": "api://botid-${{BOT_ID}}"
-    },
-    "authorization": {
-        "permissions": {
-            "resourceSpecific": [
+            "supportsCalling": false,
+            "supportsVideo": false,
+            "commandLists": [
                 {
-                "name": "ChatMessage.Read.Chat", 
-                "type": "Application"
+                    "scopes": [
+                        "personal",
+                        "groupChat",
+                        "team"
+                    ],
+                    "commands": [
+                        {
+                            "title": "summarize",
+                            "description": "Summarize recent conversation or meeting"
+                        },
+                        {
+                            "title": "action items",
+                            "description": "Find and list action items from conversation"
+                        }
+                    ]
                 }
             ]
         }
-    }
+    ],
+    "composeExtensions": [],
+    "configurableTabs": [],
+    "staticTabs": [],
+    "permissions": [
+        "identity",
+        "messageTeamMembers"
+    ],
+    "validDomains": []
 }

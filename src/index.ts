@@ -9,6 +9,7 @@ import meetingApiRoutes, { initializeMeetingRoutes } from "./routes/meetingApi";
 import { IDatabase } from "./storage/database";
 import { StorageFactory } from "./storage/storageFactory";
 import { loadConfig, logModelConfigs, validateEnvironment } from "./utils/config";
+import { fetchChannelHistory, fetchGroupChatHistory } from "./utils/chatHistory";
 import { createMessageContext } from "./utils/messageContext";
 import { createMessageRecords, finalizePromptResponse } from "./utils/utils";
 
@@ -80,15 +81,15 @@ app.on("message.submit.feedback", async ({ activity }) => {
   }
 });
 
-app.on("message", async ({ send, activity, api }) => {
+app.on("message", async ({ send, activity, api, appGraph }) => {
   if (!storage) {
     logger.warn("storage not yet initialized — ignoring message event");
     return;
   }
   const botMentioned = activity.entities?.some((e) => e.type === "mention");
   const context = botMentioned
-    ? await createMessageContext(storage, activity, api)
-    : await createMessageContext(storage, activity);
+    ? await createMessageContext(storage, activity, api, appGraph)
+    : await createMessageContext(storage, activity, undefined, appGraph);
 
   let trackedMessages;
 
@@ -112,9 +113,57 @@ app.on("message", async ({ send, activity, api }) => {
   await context.memory.addMessages(trackedMessages);
 });
 
-app.on("install.add", async ({ send }) => {
+app.on("install.add", async ({ send, activity, appGraph }) => {
+  let historyCount = 0;
+
+  if (storage) {
+    try {
+      const conversationId = activity.conversation.id;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const channelData = (activity as any).channelData as {
+        team?: { id?: string };
+        channel?: { id?: string };
+      } | undefined;
+
+      const teamId = channelData?.team?.id;
+      const channelId = channelData?.channel?.id;
+
+      let records;
+      if (teamId && channelId) {
+        // Installed in a Teams channel
+        records = await fetchChannelHistory(appGraph, teamId, channelId, conversationId, logger);
+      } else if (activity.conversation.isGroup) {
+        // Installed in a group chat
+        records = await fetchGroupChatHistory(appGraph, conversationId, logger);
+      }
+
+      if (records && records.length > 0) {
+        await storage.addMessages(records);
+        historyCount = records.length;
+        logger.info(`[install.add] Loaded ${historyCount} historical messages for ${conversationId}`);
+      }
+    } catch (err) {
+      logger.warn(
+        `[install.add] History backfill failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  const historyNote = historyCount > 0
+    ? `I've loaded **${historyCount}** recent messages so I already have context on your conversation.\n\n`
+    : "";
+
   await send(
-    "👋 Hi! I'm the Collab Agent 🚀. I'll listen to the conversation and can provide summaries, action items, or search for a message when asked!"
+    "👋 Hi! I'm **Missa**, your intelligent meeting assistant!\n\n" +
+    historyNote +
+    "Here's what I can do:\n\n" +
+    "📝 **Summarize** conversations and meetings\n" +
+    "✅ **Action Items** — find and track tasks from your chats\n" +
+    "🔍 **Search** through conversation history\n" +
+    "📋 **Meeting Notes** — get structured transcripts and summaries\n" +
+    "🎙️ **Join Meeting** — I can join a Teams meeting and transcribe it live\n" +
+    "⏹️ **Stop Recording** — stop live transcription and save the notes\n\n" +
+    "Use the command menu or @mention me with your request!"
   );
 });
 
@@ -137,11 +186,16 @@ app.on("install.add", async ({ send }) => {
 
     // Initialize and start internal API server for meeting-media-bot communication
     initializeMeetingRoutes(storage, config, logger.child("meeting-api"));
-    
+
+    // Expose meeting API routes on the main Teams bot port (for Azure - port 3980 is internal only)
+    app.http.use(express.json({ type: "application/json" }));
+    app.http.use("/api", meetingApiRoutes);
+
+    // Also start dedicated internal API server (for local dev where port 3980 is preferred)
     const internalApp = express();
     internalApp.use(express.json());
     internalApp.use("/api", meetingApiRoutes);
-    
+
     internalApp.listen(internalApiPort, () => {
       logger.info(`📡 Internal API server started on port ${internalApiPort}`);
     });

@@ -12,6 +12,10 @@ param AOAI_ENDPOINT string
 param AOAI_API_KEY string
 param AOAI_MODEL string
 
+param meetingMediaBotUrl string = ''
+@secure()
+param meetingMediaBotSecret string = ''
+
 param sqlServer string
 param sqlDatabase string
 param sqlUsername string
@@ -104,6 +108,18 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
         {
           name: 'SQL_PASSWORD'
           value: sqlPassword
+        }
+        {
+          name: 'MEETING_MEDIA_BOT_URL'
+          value: meetingMediaBotUrl
+        }
+        {
+          name: 'MEETING_MEDIA_BOT_SHARED_SECRET'
+          value: meetingMediaBotSecret
+        }
+        {
+          name: 'INTERNAL_API_PORT'
+          value: '3980'
         }
       ]
       ftpsState: 'FtpsOnly'

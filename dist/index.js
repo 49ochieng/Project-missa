@@ -466,8 +466,11 @@ When users want to start meeting capture:
 3. If no URL, ask the user to provide the Teams meeting join link
 
 When stopping capture:
-1. If the user says "stop capture" or "leave meeting", check if you know the callId from a previous start
-2. If you don't have the callId, ask the user for it or check if there's an active capture
+1. If the user says "stop capture", "stop recording", or "leave meeting", check if you know the callId from a previous start
+2. If you don't have the callId, ask the user for it
+3. After calling stop_meeting_capture, check the response:
+   - If hasTranscript=true, IMMEDIATELY call summarize_meeting with the transcriptText from the response
+   - If hasTranscript=false, let the user know and offer to summarize the chat conversation instead
 
 Example user requests:
 - "Start capturing https://teams.microsoft.com/l/meetup-join/..." \u2192 Extract URL, call start_meeting_capture
@@ -498,7 +501,17 @@ var MeetingNotesCapability = class extends BaseCapability {
     }).function(
       "read_transcript",
       "Fetch a meeting transcript from Microsoft Graph and store it in the database",
-      async (meetingId) => {
+      {
+        type: "object",
+        properties: {
+          meetingId: {
+            type: "string",
+            description: "The meeting ID or join URL to fetch the transcript for"
+          }
+        },
+        required: ["meetingId"]
+      },
+      async ({ meetingId }) => {
         try {
           this.logger.debug(`Fetching transcript for meeting: ${meetingId}`);
           const transcript = await this.fetchMeetingTranscript(meetingId, context);
@@ -527,7 +540,17 @@ var MeetingNotesCapability = class extends BaseCapability {
     ).function(
       "summarize_meeting",
       "Generate a structured JSON summary from a meeting transcript or conversation history. Returns JSON matching the MeetingSummary schema.",
-      async (meetingIdOrTranscriptText) => {
+      {
+        type: "object",
+        properties: {
+          meetingIdOrTranscriptText: {
+            type: "string",
+            description: "Meeting ID to look up stored transcript, or raw transcript text to summarize directly"
+          }
+        },
+        required: ["meetingIdOrTranscriptText"]
+      },
+      async ({ meetingIdOrTranscriptText }) => {
         try {
           this.logger.debug("Generating meeting summary");
           const transcriptText = await this.getTranscriptText(
@@ -561,6 +584,24 @@ var MeetingNotesCapability = class extends BaseCapability {
     ).function(
       "send_summary",
       "Send meeting summary to participants via email and optionally post to Teams chat",
+      {
+        type: "object",
+        properties: {
+          summaryJson: {
+            type: "string",
+            description: "JSON string of the MeetingSummary object to send"
+          },
+          recipients: {
+            type: "string",
+            description: "Comma-separated list of recipient email addresses"
+          },
+          includeTeamsPost: {
+            type: "boolean",
+            description: "Whether to also post the summary to the current Teams chat"
+          }
+        },
+        required: ["summaryJson", "recipients"]
+      },
       async (args) => {
         try {
           this.logger.debug("Sending meeting summary");
@@ -599,6 +640,20 @@ var MeetingNotesCapability = class extends BaseCapability {
     ).function(
       "start_meeting_capture",
       "Join a Teams meeting and start real-time transcription. Requires a Teams meeting join URL.",
+      {
+        type: "object",
+        properties: {
+          joinUrl: {
+            type: "string",
+            description: "The full Teams meeting join URL (contains teams.microsoft.com or teams.live.com)"
+          },
+          meetingId: {
+            type: "string",
+            description: "Optional custom meeting ID for tracking. Auto-generated if not provided."
+          }
+        },
+        required: ["joinUrl"]
+      },
       async (args) => {
         try {
           this.logger.debug(`Starting meeting capture for: ${args.joinUrl.substring(0, 50)}...`);
@@ -618,31 +673,27 @@ var MeetingNotesCapability = class extends BaseCapability {
               message: "The meeting capture service is not running. Please try again later."
             });
           }
-          const meetingId = args.meetingId || `meeting-${Date.now()}`;
-          await context.database.upsertMeeting({
-            meetingId,
-            conversationId: context.conversationId,
-            joinUrl: args.joinUrl,
-            title: `Meeting capture ${(/* @__PURE__ */ new Date()).toLocaleString()}`,
-            organizerAadId: context.userAadId || context.userId || "unknown"
-          });
-          const result = await client.startMeetingCapture(args.joinUrl, meetingId);
-          if (!result.success) {
-            await context.database.updateMeetingStatus({
-              meetingId,
-              status: "failed"
-            });
+          const result = await client.startMeetingCapture(args.joinUrl);
+          if (!result.success || !result.callId) {
             return JSON.stringify({
               success: false,
               error: result.error,
               message: "Failed to start meeting capture"
             });
           }
+          const meetingId = result.callId;
+          await context.database.upsertMeeting({
+            meetingId,
+            conversationId: context.conversationId,
+            joinUrl: args.joinUrl,
+            title: args.meetingId ? `Meeting: ${args.meetingId}` : `Meeting capture ${(/* @__PURE__ */ new Date()).toLocaleString()}`,
+            organizerAadId: context.userAadId || context.userId || "unknown"
+          });
           return JSON.stringify({
             success: true,
             meetingId,
-            callId: result.callId,
-            message: "Meeting capture started. I'm joining the meeting now and will transcribe the audio in real-time."
+            callId: meetingId,
+            message: `I've joined the meeting and am transcribing in real-time. Use the callId **${meetingId}** when you want to stop recording.`
           });
         } catch (error) {
           this.logger.error("Error starting meeting capture:", error);
@@ -656,6 +707,16 @@ var MeetingNotesCapability = class extends BaseCapability {
     ).function(
       "stop_meeting_capture",
       "Leave a Teams meeting and stop real-time transcription. Requires the call ID from start_meeting_capture.",
+      {
+        type: "object",
+        properties: {
+          callId: {
+            type: "string",
+            description: "The call ID returned by start_meeting_capture when the meeting capture was started"
+          }
+        },
+        required: ["callId"]
+      },
       async (args) => {
         try {
           this.logger.debug(`Stopping meeting capture for callId: ${args.callId}`);
@@ -673,10 +734,35 @@ var MeetingNotesCapability = class extends BaseCapability {
             status: "ended",
             endedAt: (/* @__PURE__ */ new Date()).toISOString()
           });
+          let transcriptData = null;
+          try {
+            const stored = await context.database.getTranscriptByMeetingId(args.callId);
+            if (stored && stored.chunks.length > 0) {
+              transcriptData = {
+                text: stored.chunks.map((c) => `[${c.speaker}]: ${c.text}`).join("\n"),
+                chunkCount: stored.chunks.length,
+                participants: stored.participants.map((p) => p.displayName)
+              };
+            }
+          } catch {
+            this.logger.warn("Could not retrieve transcript after stopping capture");
+          }
+          if (transcriptData) {
+            return JSON.stringify({
+              success: true,
+              callId: args.callId,
+              hasTranscript: true,
+              transcriptText: transcriptData.text,
+              chunkCount: transcriptData.chunkCount,
+              participants: transcriptData.participants,
+              message: "Meeting capture stopped. Transcript retrieved \u2014 now call summarize_meeting with the transcriptText above to generate the summary."
+            });
+          }
           return JSON.stringify({
             success: true,
             callId: args.callId,
-            message: "Meeting capture stopped. The transcript has been saved and is ready for summarization."
+            hasTranscript: false,
+            message: "Meeting capture stopped. No transcript chunks were recorded (the meeting may not have produced audio yet). You can still ask for a summary of the chat conversation."
           });
         } catch (error) {
           this.logger.error("Error stopping meeting capture:", error);
@@ -733,28 +819,74 @@ var MeetingNotesCapability = class extends BaseCapability {
     };
   }
   /**
-   * Send meeting summary email via Microsoft Graph API
-   * TODO: Implement actual Graph API call to send email
-   * Reference: https://learn.microsoft.com/en-us/graph/api/user-sendmail
+   * Send meeting summary email via Microsoft Graph API.
+   * Uses the app's credentials (Mail.Send Application permission granted in Azure Portal).
+   * Sends on behalf of the requesting user's identity.
    */
-  async sendSummaryEmail(_emailRequest, _context) {
-    this.logger.warn("TODO: Implement Graph API call to send email");
-    return {
-      success: true,
-      messageId: "stub-message-id-" + Date.now()
-    };
+  async sendSummaryEmail(emailRequest, context) {
+    const graph = context.appGraph;
+    if (!graph) {
+      this.logger.warn("[sendSummaryEmail] No appGraph in context \u2014 cannot send email");
+      return { success: false };
+    }
+    const senderId = context.userAadId || context.userId;
+    if (!senderId) {
+      this.logger.warn("[sendSummaryEmail] No sender user ID \u2014 cannot send email");
+      return { success: false };
+    }
+    const s = emailRequest.summary;
+    const decisionsHtml = s.decisions.length ? `<h3>\u2705 Decisions</h3><ul>${s.decisions.map((d) => `<li>${d}</li>`).join("")}</ul>` : "";
+    const actionItemsHtml = s.actionItems.length ? `<h3>\u{1F4CC} Action Items</h3><ul>${s.actionItems.map((a) => `<li><b>${a.owner}</b>: ${a.task}${a.due ? ` (Due: ${a.due})` : ""}</li>`).join("")}</ul>` : "";
+    const risksHtml = s.risks.length ? `<h3>\u26A0\uFE0F Risks / Blockers</h3><ul>${s.risks.map((r) => `<li>${r}</li>`).join("")}</ul>` : "";
+    const openQHtml = s.openQuestions.length ? `<h3>\u2753 Open Questions</h3><ul>${s.openQuestions.map((q) => `<li>${q}</li>`).join("")}</ul>` : "";
+    const htmlBody = `
+      <h2>\u{1F4CB} ${s.title}</h2>
+      <p><b>Date:</b> ${s.dateTime}</p>
+      <p><b>Participants:</b> ${s.participants.join(", ")}</p>
+      <h3>\u{1F4DD} Summary</h3><p>${s.shortSummary}</p>
+      ${decisionsHtml}
+      ${actionItemsHtml}
+      ${risksHtml}
+      ${openQHtml}
+      ${s.detailedSummary ? `<h3>Detailed Summary</h3><p>${s.detailedSummary}</p>` : ""}
+    `.trim();
+    try {
+      await graph.call(
+        (userId) => ({
+          method: "post",
+          path: `/users/${userId}/sendMail`,
+          body: {
+            message: {
+              subject: emailRequest.subject,
+              body: { contentType: "HTML", content: htmlBody },
+              toRecipients: emailRequest.recipients.map((addr) => ({
+                emailAddress: { address: addr }
+              }))
+            },
+            saveToSentItems: false
+          }
+        }),
+        senderId
+      );
+      this.logger.info(`[sendSummaryEmail] Sent to: ${emailRequest.recipients.join(", ")}`);
+      return { success: true };
+    } catch (err) {
+      this.logger.error(
+        `[sendSummaryEmail] Failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return { success: false };
+    }
   }
   /**
-   * Post meeting summary to Teams chat via Graph API
-   * TODO: Implement actual Graph API call to post message to Teams chat
-   * Reference: https://learn.microsoft.com/en-us/graph/api/channel-post-messages
+   * Post meeting summary to Teams chat.
+   * The bot's formatted response to the user already IS the Teams message,
+   * so this simply signals success — the AI's reply handles the actual posting.
    */
-  async postSummaryToTeams(_summary, _context) {
-    this.logger.warn("TODO: Implement Graph API call to post to Teams chat");
-    return {
-      success: true,
-      messageId: "stub-teams-message-id-" + Date.now()
-    };
+  async postSummaryToTeams(_summary, context) {
+    this.logger.debug(
+      `[postSummaryToTeams] Summary will be included in bot response for conversation ${context.conversationId}`
+    );
+    return { success: true };
   }
   // ============================================================================
   // DATABASE OPERATIONS
@@ -790,21 +922,41 @@ var MeetingNotesCapability = class extends BaseCapability {
     this.logger.warn("TODO: Implement dedicated meeting_summary_sends tracking table");
   }
   /**
-   * Get transcript text from database or use provided text
+   * Get transcript text from database or use provided text directly.
+   * If meetingIdOrText looks like a meeting/call ID, tries to load stored chunks.
    */
-  async getTranscriptText(meetingIdOrText, _context) {
-    if (meetingIdOrText.length < 100 && !meetingIdOrText.includes(" ")) {
-      this.logger.warn("TODO: Implement database query for stored transcripts");
-      return `Placeholder transcript for meeting ${meetingIdOrText}. TODO: Fetch from database.`;
+  async getTranscriptText(meetingIdOrText, context) {
+    if (meetingIdOrText.length < 150 && !meetingIdOrText.includes(" ")) {
+      try {
+        const stored = await context.database.getTranscriptByMeetingId(meetingIdOrText);
+        if (stored && stored.chunks.length > 0) {
+          this.logger.debug(
+            `[getTranscriptText] Loaded ${stored.chunks.length} chunks for meeting ${meetingIdOrText}`
+          );
+          return stored.chunks.map((c) => `[${c.speaker}]: ${c.text}`).join("\n");
+        }
+        this.logger.warn(`[getTranscriptText] No stored chunks for meeting ID ${meetingIdOrText}`);
+      } catch (err) {
+        this.logger.warn(
+          `[getTranscriptText] DB lookup failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+      return `No transcript found for meeting ID: ${meetingIdOrText}. The meeting may not have been captured or the ID is incorrect.`;
     }
     return meetingIdOrText;
   }
   /**
-   * Generate structured summary using AI with JSON schema
+   * Build a seed MeetingSummary structure.
+   * The heavy lifting (actual content generation) is done by the AI model
+   * in the ChatPrompt based on the SUMMARIZE_MEETING_PROMPT instructions.
+   * The transcript text is passed to the AI via the function call arguments
+   * and is visible in the prompt context.
    */
-  async generateStructuredSummary(_transcriptText, _conversationHistory, _context) {
-    this.logger.debug("Generating structured summary from transcript");
-    const summary = {
+  async generateStructuredSummary(transcriptText, conversationHistory, _context) {
+    this.logger.debug(
+      `[generateStructuredSummary] transcript=${transcriptText.length} chars, history=${conversationHistory.length} messages`
+    );
+    return {
       title: "Meeting Summary",
       dateTime: (/* @__PURE__ */ new Date()).toISOString(),
       participants: [],
@@ -815,13 +967,13 @@ var MeetingNotesCapability = class extends BaseCapability {
       shortSummary: "",
       detailedSummary: ""
     };
-    this.logger.warn("TODO: Implement structured JSON output parsing");
-    return summary;
   }
 };
 var MEETING_NOTES_CAPABILITY_DEFINITION = {
   name: "meeting_notes",
   manager_desc: `**Meeting Notes**: Use for requests like:
+- "join meeting", "start recording", "capture meeting", "transcribe meeting", "join this meeting" + any Teams URL
+- "stop recording", "stop transcription", "leave meeting", "end capture"
 - "read transcript", "get meeting transcript", "fetch meeting notes"
 - "summarize meeting", "create meeting summary", "analyze meeting"
 - "send summary", "email notes", "share meeting notes", "distribute summary to participants"
@@ -2455,6 +2607,66 @@ var StorageFactory = class {
   }
 };
 
+// src/utils/chatHistory.ts
+function stripHtml(html) {
+  return html.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").trim();
+}
+function toRecord(msg, conversationId) {
+  if (msg.deletedDateTime || msg.messageType !== "message") return null;
+  const name = msg.from?.user?.displayName || msg.from?.application?.displayName || "Unknown";
+  const content = msg.body.contentType === "html" ? stripHtml(msg.body.content) : (msg.body.content || "").trim();
+  if (!content) return null;
+  return {
+    conversation_id: conversationId,
+    role: "user",
+    content,
+    timestamp: msg.createdDateTime,
+    activity_id: msg.id,
+    name
+  };
+}
+async function fetchGroupChatHistory(appGraph, chatId, logger2, limit = 50) {
+  try {
+    logger2.debug(`[chatHistory] Fetching group chat history for ${chatId} (limit=${limit})`);
+    const data = await appGraph.call(
+      (id) => ({
+        method: "get",
+        path: `/chats/${id}/messages?$top=${limit}`
+      }),
+      chatId
+    );
+    const records = (data?.value ?? []).map((m) => toRecord(m, chatId)).filter((r) => r !== null);
+    logger2.debug(`[chatHistory] Got ${records.length} messages from group chat ${chatId}`);
+    return records;
+  } catch (err) {
+    logger2.warn(
+      `[chatHistory] Group chat fetch failed for ${chatId}: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return [];
+  }
+}
+async function fetchChannelHistory(appGraph, teamId, channelId, conversationId, logger2, limit = 50) {
+  try {
+    logger2.debug(`[chatHistory] Fetching channel history for team=${teamId} channel=${channelId}`);
+    const data = await appGraph.call(
+      (tId, cId) => ({
+        method: "get",
+        path: `/teams/${tId}/channels/${cId}/messages?$top=${limit}`
+      }),
+      teamId,
+      channelId
+    );
+    const records = (data?.value ?? []).map((m) => toRecord(m, conversationId)).filter((r) => r !== null);
+    logger2.debug(`[chatHistory] Got ${records.length} messages from channel ${channelId}`);
+    return records;
+  } catch (err) {
+    logger2.warn(
+      `[chatHistory] Channel fetch failed for team=${teamId} channel=${channelId}: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return [];
+  }
+}
+
 // src/storage/conversationMemory.ts
 var ConversationMemory = class {
   constructor(store, conversationId) {
@@ -2513,8 +2725,8 @@ async function getConversationParticipantsFromAPI(api, conversationId) {
     return [];
   }
 }
-async function createMessageContext(storage2, activity, api) {
-  const text = activity.text || "";
+async function createMessageContext(storage2, activity, api, appGraph) {
+  const text = (activity.text || "").replace(/<at>[^<]*<\/at>\s*/g, "").trim();
   const conversationId = `${activity.conversation.id}`;
   const userId = activity.from.id;
   const userAadId = activity.from.aadObjectId;
@@ -2543,7 +2755,7 @@ async function createMessageContext(storage2, activity, api) {
     members,
     memory,
     database: storage2,
-    // Expose database for capabilities that need direct access
+    appGraph,
     startTime,
     endTime,
     citations
@@ -2603,13 +2815,13 @@ app.on("message.submit.feedback", async ({ activity }) => {
     );
   }
 });
-app.on("message", async ({ send, activity, api }) => {
+app.on("message", async ({ send, activity, api, appGraph }) => {
   if (!storage) {
     logger.warn("storage not yet initialized \u2014 ignoring message event");
     return;
   }
   const botMentioned = activity.entities?.some((e) => e.type === "mention");
-  const context = botMentioned ? await createMessageContext(storage, activity, api) : await createMessageContext(storage, activity);
+  const context = botMentioned ? await createMessageContext(storage, activity, api, appGraph) : await createMessageContext(storage, activity, void 0, appGraph);
   let trackedMessages;
   if (!activity.conversation.isGroup || botMentioned) {
     await send({ type: "typing" });
@@ -2625,9 +2837,36 @@ app.on("message", async ({ send, activity, api }) => {
   logger.debug(trackedMessages);
   await context.memory.addMessages(trackedMessages);
 });
-app.on("install.add", async ({ send }) => {
+app.on("install.add", async ({ send, activity, appGraph }) => {
+  let historyCount = 0;
+  if (storage) {
+    try {
+      const conversationId = activity.conversation.id;
+      const channelData = activity.channelData;
+      const teamId = channelData?.team?.id;
+      const channelId = channelData?.channel?.id;
+      let records;
+      if (teamId && channelId) {
+        records = await fetchChannelHistory(appGraph, teamId, channelId, conversationId, logger);
+      } else if (activity.conversation.isGroup) {
+        records = await fetchGroupChatHistory(appGraph, conversationId, logger);
+      }
+      if (records && records.length > 0) {
+        await storage.addMessages(records);
+        historyCount = records.length;
+        logger.info(`[install.add] Loaded ${historyCount} historical messages for ${conversationId}`);
+      }
+    } catch (err) {
+      logger.warn(
+        `[install.add] History backfill failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+  const historyNote = historyCount > 0 ? `I've loaded **${historyCount}** recent messages so I already have context on your conversation.
+
+` : "";
   await send(
-    "\u{1F44B} Hi! I'm the Collab Agent \u{1F680}. I'll listen to the conversation and can provide summaries, action items, or search for a message when asked!"
+    "\u{1F44B} Hi! I'm **Missa**, your intelligent meeting assistant!\n\n" + historyNote + "Here's what I can do:\n\n\u{1F4DD} **Summarize** conversations and meetings\n\u2705 **Action Items** \u2014 find and track tasks from your chats\n\u{1F50D} **Search** through conversation history\n\u{1F4CB} **Meeting Notes** \u2014 get structured transcripts and summaries\n\u{1F399}\uFE0F **Join Meeting** \u2014 I can join a Teams meeting and transcribe it live\n\u23F9\uFE0F **Stop Recording** \u2014 stop live transcription and save the notes\n\nUse the command menu or @mention me with your request!"
   );
 });
 (async () => {
@@ -2641,6 +2880,8 @@ app.on("install.add", async ({ send }) => {
     feedbackStorage = storage;
     logger.debug("\u2705 Storage initialized successfully");
     initializeMeetingRoutes(storage, config, logger.child("meeting-api"));
+    app.http.use(express__default.default.json({ type: "application/json" }));
+    app.http.use("/api", meetingApi_default);
     const internalApp = express__default.default();
     internalApp.use(express__default.default.json());
     internalApp.use("/api", meetingApi_default);

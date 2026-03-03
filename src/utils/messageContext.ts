@@ -1,4 +1,5 @@
 import { CitationAppearance, Client, IMessageActivity } from "@microsoft/teams.api";
+import type { GraphClient } from "@microsoft/teams.apps";
 import { ConversationMemory } from "../storage/conversationMemory";
 import { IDatabase } from "../storage/database";
 
@@ -17,6 +18,7 @@ export interface MessageContext {
   members: Array<{ name: string; id: string }>; // Available conversation members
   memory: ConversationMemory; // get convo memory by agent type
   database: IDatabase; // Database instance for direct storage operations
+  appGraph?: GraphClient; // SDK Graph client (app credentials) for Graph API calls
   startTime: string;
   endTime: string;
   citations: CitationAppearance[];
@@ -49,9 +51,11 @@ async function getConversationParticipantsFromAPI(
 export async function createMessageContext(
   storage: IDatabase,
   activity: IMessageActivity,
-  api?: Client
+  api?: Client,
+  appGraph?: GraphClient
 ): Promise<MessageContext> {
-  const text = activity.text || "";
+  // Strip @mention markup so the AI sees clean text (e.g. "<at>Missa</at> join meeting" → "join meeting")
+  const text = (activity.text || "").replace(/<at>[^<]*<\/at>\s*/g, "").trim();
   const conversationId = `${activity.conversation.id}`;
   const userId = activity.from.id;
   const userAadId = activity.from.aadObjectId;
@@ -85,7 +89,8 @@ export async function createMessageContext(
     activityId,
     members,
     memory,
-    database: storage, // Expose database for capabilities that need direct access
+    database: storage,
+    appGraph,
     startTime,
     endTime,
     citations,

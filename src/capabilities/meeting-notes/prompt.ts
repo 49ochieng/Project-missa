@@ -153,8 +153,11 @@ When users want to start meeting capture:
 3. If no URL, ask the user to provide the Teams meeting join link
 
 When stopping capture:
-1. If the user says "stop capture" or "leave meeting", check if you know the callId from a previous start
-2. If you don't have the callId, ask the user for it or check if there's an active capture
+1. If the user says "stop capture", "stop recording", or "leave meeting", check if you know the callId from a previous start
+2. If you don't have the callId, ask the user for it
+3. After calling stop_meeting_capture, check the response:
+   - If hasTranscript=true, IMMEDIATELY call summarize_meeting with the transcriptText from the response
+   - If hasTranscript=false, let the user know and offer to summarize the chat conversation instead
 
 Example user requests:
 - "Start capturing https://teams.microsoft.com/l/meetup-join/..." → Extract URL, call start_meeting_capture

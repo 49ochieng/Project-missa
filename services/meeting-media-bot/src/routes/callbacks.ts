@@ -4,8 +4,8 @@
  */
 
 import { Router, Request, Response } from "express";
-import { updateCallState, getCall, leaveCall, CallResource } from "../graph/callManager";
-import { createTranscriber, removeTranscriber, TranscriptionChunk } from "../speech/transcriber";
+import { updateCallState, CallResource, getJoinUrl } from "../graph/callManager";
+import { startTranscriptPolling, stopTranscriptPolling } from "../graph/transcriptPoller";
 import { getConfig } from "../config";
 
 const router = Router();
@@ -20,44 +20,6 @@ interface GraphNotification {
     resourceData: CallResource;
     clientState?: string;
   }>;
-}
-
-/**
- * Send transcription chunk to Project Missa
- */
-async function sendChunkToProjectMissa(
-  callId: string,
-  chunk: TranscriptionChunk
-): Promise<void> {
-  const config = getConfig();
-
-  try {
-    const response = await fetch(`${config.projectMissaUrl}/api/meeting-transcripts/chunk`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shared-Secret": config.sharedSecret,
-      },
-      body: JSON.stringify({
-        callId,
-        text: chunk.text,
-        speakerId: chunk.speakerId,
-        timestamp: chunk.timestamp.toISOString(),
-        offsetMs: chunk.offsetMs,
-        durationMs: chunk.durationMs,
-        isFinal: chunk.isFinal,
-        source: "azure_speech",
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(
-        `[Callbacks] Failed to send chunk to Project Missa: ${response.status}`
-      );
-    }
-  } catch (error) {
-    console.error(`[Callbacks] Error sending chunk to Project Missa:`, error);
-  }
 }
 
 /**
@@ -96,43 +58,29 @@ async function sendStatusToProjectMissa(
 }
 
 /**
- * Handle call established - start transcription
+ * Handle call established - start transcript polling
  */
 async function handleCallEstablished(callId: string): Promise<void> {
   console.log(`[Callbacks] Call established: ${callId}`);
 
-  // Create transcriber with event handlers
-  const transcriber = createTranscriber(callId, {
-    onTranscriptionChunk: (chunk) => {
-      sendChunkToProjectMissa(callId, chunk);
-    },
-    onError: (error) => {
-      console.error(`[Callbacks] Transcription error for call ${callId}:`, error);
-      sendStatusToProjectMissa(callId, "transcription_error", error.message);
-    },
-    onSessionStarted: () => {
-      console.log(`[Callbacks] Transcription session started for call ${callId}`);
-      sendStatusToProjectMissa(callId, "transcribing");
-    },
-    onSessionStopped: () => {
-      console.log(`[Callbacks] Transcription session stopped for call ${callId}`);
-    },
-  });
+  await sendStatusToProjectMissa(callId, "joined");
 
-  try {
-    // Initialize with push stream (audio will be fed from media processing)
-    // Note: For now, this creates the stream. Media platform integration will feed audio.
-    transcriber.initializePushStream();
-    await transcriber.start();
-    
-    await sendStatusToProjectMissa(callId, "joined");
-  } catch (error) {
-    console.error(`[Callbacks] Failed to start transcription:`, error);
-    await sendStatusToProjectMissa(
-      callId,
-      "transcription_error",
-      error instanceof Error ? error.message : "Unknown error"
-    );
+  // Get the join URL stored when we initiated the call
+  const joinUrl = getJoinUrl(callId);
+  if (!joinUrl) {
+    console.warn(`[Callbacks] No join URL found for call ${callId}, skipping transcript polling`);
+    return;
+  }
+
+  // Start live transcript polling via Teams Graph API
+  const result = await startTranscriptPolling(callId, joinUrl);
+  if (result.success) {
+    console.log(`[Callbacks] Transcript polling started: ${result.message}`);
+    await sendStatusToProjectMissa(callId, "transcribing");
+  } else {
+    console.warn(`[Callbacks] Transcript polling unavailable: ${result.message}`);
+    // Notify Project Missa with instructions for user
+    await sendStatusToProjectMissa(callId, "joined", result.message);
   }
 }
 
@@ -142,8 +90,8 @@ async function handleCallEstablished(callId: string): Promise<void> {
 async function handleCallTerminated(callId: string): Promise<void> {
   console.log(`[Callbacks] Call terminated: ${callId}`);
 
-  // Clean up transcriber
-  removeTranscriber(callId);
+  // Stop transcript polling
+  stopTranscriptPolling(callId);
 
   // Notify Project Missa
   await sendStatusToProjectMissa(callId, "ended");
