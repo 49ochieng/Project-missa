@@ -5,6 +5,7 @@
 
 import express, { Request, Response, NextFunction } from "express";
 import { loadConfig, getConfig } from "./config";
+import { startCalendarPoller, stopCalendarPoller } from "./calendar/calendarPoller";
 import callbackRoutes from "./routes/callbacks";
 import apiRoutes from "./routes/api";
 
@@ -53,6 +54,13 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
+// Start calendar auto-join poller if configured
+if (config.autoJoinUserEmail || config.autoJoinUserObjectId) {
+  startCalendarPoller();
+} else {
+  console.log("[Calendar] Auto-join not configured (set AUTO_JOIN_USER_EMAIL or AUTO_JOIN_USER_OBJECT_ID to enable)");
+}
+
 // Start server
 const PORT = config.port;
 
@@ -79,11 +87,13 @@ Available endpoints:
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("[Server] SIGTERM received, shutting down gracefully...");
+  stopCalendarPoller();
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
   console.log("[Server] SIGINT received, shutting down gracefully...");
+  stopCalendarPoller();
   process.exit(0);
 });
 

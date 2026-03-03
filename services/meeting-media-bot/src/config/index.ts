@@ -28,6 +28,11 @@ export interface MeetingMediaBotConfig {
 
   // Server
   port: number;
+
+  // Auto-join (optional)
+  autoJoinUserEmail: string | null;
+  autoJoinUserObjectId: string | null;
+  calendarPollIntervalMs: number;
 }
 
 interface ConfigSchema {
@@ -101,6 +106,22 @@ const configSchema: Record<keyof MeetingMediaBotConfig, ConfigSchema> = {
     isSecret: false,
     defaultValue: "4000",
   },
+  autoJoinUserEmail: {
+    envVars: ["AUTO_JOIN_USER_EMAIL"],
+    required: false,
+    isSecret: false,
+  },
+  autoJoinUserObjectId: {
+    envVars: ["AUTO_JOIN_USER_OBJECT_ID"],
+    required: false,
+    isSecret: false,
+  },
+  calendarPollIntervalMs: {
+    envVars: ["CALENDAR_POLL_INTERVAL_MS"],
+    required: false,
+    isSecret: false,
+    defaultValue: "60000",
+  },
 };
 
 function resolveEnvVar(envVars: string[], defaultValue?: string): string | undefined {
@@ -129,10 +150,15 @@ export function loadConfig(): MeetingMediaBotConfig {
     if (!value || value === "") {
       if (schema.required) {
         errors.push(`Missing required: ${configKey} (set: ${schema.envVars.join(" or ")})`);
+      } else if (configKey === "autoJoinUserEmail" || configKey === "autoJoinUserObjectId") {
+        // Nullable optional fields default to null
+        (config as Record<string, unknown>)[configKey] = null;
+      } else if (configKey === "calendarPollIntervalMs") {
+        (config as Record<string, unknown>)[configKey] = 60000;
       }
     } else {
-      // Handle port as number
-      if (configKey === "port") {
+      // Handle numeric fields
+      if (configKey === "port" || configKey === "calendarPollIntervalMs") {
         (config as Record<string, unknown>)[configKey] = parseInt(value, 10);
       } else {
         (config as Record<string, unknown>)[configKey] = value;

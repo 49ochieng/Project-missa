@@ -147,10 +147,11 @@ Determine which command the user wants:
 - Keywords like "send", "email", "share", "distribute" → send_summary
 
 <MEETING CAPTURE GUIDANCE>
-When users want to start meeting capture:
+When users want to start meeting capture ("join meeting", "join this meeting", "start recording", "capture this"):
 1. Look for a Teams meeting URL in their message (contains teams.microsoft.com or teams.live.com)
 2. If URL found, call start_meeting_capture with the joinUrl
-3. If no URL, ask the user to provide the Teams meeting join link
+3. If NO URL found, STILL call start_meeting_capture with an empty joinUrl — the system will automatically detect the active meeting from the chat context (like Otter.ai does)
+4. Only ask the user for a URL if the automatic detection also fails (the function will return success: false with an appropriate error message)
 
 When stopping capture:
 1. If the user says "stop capture", "stop recording", or "leave meeting", check if you know the callId from a previous start

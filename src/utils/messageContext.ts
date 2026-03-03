@@ -1,5 +1,5 @@
 import { CitationAppearance, Client, IMessageActivity } from "@microsoft/teams.api";
-import type { GraphClient } from "@microsoft/teams.apps";
+import type { Client as GraphClient } from "@microsoft/teams.graph";
 import { ConversationMemory } from "../storage/conversationMemory";
 import { IDatabase } from "../storage/database";
 

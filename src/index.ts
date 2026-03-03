@@ -6,12 +6,17 @@ import { DevtoolsPlugin } from "@microsoft/teams.dev";
 import express from "express";
 import { ManagerPrompt } from "./agent/manager";
 import meetingApiRoutes, { initializeMeetingRoutes } from "./routes/meetingApi";
+import { getMeetingMediaBotClient } from "./services/meetingMediaBotClient";
 import { IDatabase } from "./storage/database";
 import { StorageFactory } from "./storage/storageFactory";
 import { loadConfig, logModelConfigs, validateEnvironment } from "./utils/config";
 import { fetchChannelHistory, fetchGroupChatHistory } from "./utils/chatHistory";
 import { createMessageContext } from "./utils/messageContext";
 import { createMessageRecords, finalizePromptResponse } from "./utils/utils";
+
+// Tracks auto-joined meetings: conversationId → callId
+// Used for auto-leave when meetingEnd event is received
+const autoJoinedMeetings = new Map<string, string>();
 
 const logger = new ConsoleLogger("missa", { level: "debug" });
 
@@ -161,10 +166,89 @@ app.on("install.add", async ({ send, activity, appGraph }) => {
     "✅ **Action Items** — find and track tasks from your chats\n" +
     "🔍 **Search** through conversation history\n" +
     "📋 **Meeting Notes** — get structured transcripts and summaries\n" +
-    "🎙️ **Join Meeting** — I can join a Teams meeting and transcribe it live\n" +
+    "🎙️ **Auto-Join** — I automatically join meetings when they start in this chat\n" +
+    "🔗 **Smart Join** — just say `@Missa join meeting` (no URL needed if a meeting is active)\n" +
     "⏹️ **Stop Recording** — stop live transcription and save the notes\n\n" +
     "Use the command menu or @mention me with your request!"
   );
+});
+
+/**
+ * Teams Meeting Lifecycle Events (Tier 1 auto-join)
+ * Received when a meeting starts/ends in a conversation where the bot is installed.
+ * Requires manifest: bots[].meetingEventSubscription.onlineMeetingStarted/Ended = true
+ */
+app.on("event", async ({ activity, send }) => {
+  const eventName = activity.name as string;
+
+  if (eventName === "application/vnd.microsoft.meetingStart") {
+    const details = ((activity as unknown as Record<string, unknown>).value as Record<string, unknown>)?.details as Record<string, string> | undefined;
+    const joinUrl = details?.joinWebUrl || details?.joinUrl;
+    const meetingTitle = details?.title || "Teams Meeting";
+    const conversationId = activity.conversation.id;
+
+    logger.info(`[MeetingEvent] Meeting started in ${conversationId}: "${meetingTitle}"`);
+
+    if (!joinUrl) {
+      logger.warn("[MeetingEvent] No joinWebUrl in meetingStart event — cannot auto-join");
+      return;
+    }
+
+    // Don't double-join if already active
+    if (autoJoinedMeetings.has(conversationId)) {
+      logger.info(`[MeetingEvent] Already joined meeting for ${conversationId}, skipping`);
+      return;
+    }
+
+    try {
+      await send("🎙️ Meeting started — Missa is joining to capture the transcript...");
+
+      const client = getMeetingMediaBotClient(logger);
+      const result = await client.startMeetingCapture(joinUrl);
+
+      if (result.success && result.callId) {
+        autoJoinedMeetings.set(conversationId, result.callId);
+        logger.info(`[MeetingEvent] Auto-joined meeting, callId: ${result.callId}`);
+        await send(
+          `✅ I've joined **"${meetingTitle}"** and will transcribe in real-time.\n\n` +
+          `📌 **Tip:** Ask the meeting organizer to enable **Teams transcription** (meeting controls → ... → Start transcription) for best results.\n\n` +
+          `When the meeting ends I'll automatically leave and offer a summary.`
+        );
+      } else {
+        logger.error(`[MeetingEvent] Failed to auto-join: ${result.error}`);
+        await send(`⚠️ Could not auto-join the meeting: ${result.error || "Unknown error"}. You can still join manually with \`@Missa join meeting <url>\`.`);
+      }
+    } catch (err) {
+      logger.error("[MeetingEvent] Error during auto-join:", err);
+    }
+  }
+
+  if (eventName === "application/vnd.microsoft.meetingEnd") {
+    const conversationId = activity.conversation.id;
+    const callId = autoJoinedMeetings.get(conversationId);
+
+    logger.info(`[MeetingEvent] Meeting ended in ${conversationId}, callId: ${callId || "none"}`);
+
+    if (!callId) {
+      // Meeting wasn't auto-joined (user may have manually joined or bot wasn't active)
+      return;
+    }
+
+    try {
+      const client = getMeetingMediaBotClient(logger);
+      await client.stopMeetingCapture(callId);
+      autoJoinedMeetings.delete(conversationId);
+      logger.info(`[MeetingEvent] Left meeting ${callId} after meetingEnd event`);
+
+      await send(
+        "📋 Meeting ended — I've left and saved the transcript.\n\n" +
+        "Use **@Missa summarize meeting** to get a structured summary with action items, decisions, and key points."
+      );
+    } catch (err) {
+      logger.error("[MeetingEvent] Error during auto-leave:", err);
+      autoJoinedMeetings.delete(conversationId);
+    }
+  }
 });
 
 (async () => {

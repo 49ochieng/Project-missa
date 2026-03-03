@@ -7,7 +7,7 @@
  *   - ChannelMessage.Read.Group   (team channels)
  */
 
-import type { GraphClient } from "@microsoft/teams.apps";
+import type { Client as GraphClient } from "@microsoft/teams.graph";
 import type { ILogger } from "@microsoft/teams.common";
 import type { MessageRecord } from "../storage/types";
 

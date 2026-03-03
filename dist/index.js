@@ -460,10 +460,11 @@ Determine which command the user wants:
 - Keywords like "send", "email", "share", "distribute" \u2192 send_summary
 
 <MEETING CAPTURE GUIDANCE>
-When users want to start meeting capture:
+When users want to start meeting capture ("join meeting", "join this meeting", "start recording", "capture this"):
 1. Look for a Teams meeting URL in their message (contains teams.microsoft.com or teams.live.com)
 2. If URL found, call start_meeting_capture with the joinUrl
-3. If no URL, ask the user to provide the Teams meeting join link
+3. If NO URL found, STILL call start_meeting_capture with an empty joinUrl \u2014 the system will automatically detect the active meeting from the chat context (like Otter.ai does)
+4. Only ask the user for a URL if the automatic detection also fails (the function will return success: false with an appropriate error message)
 
 When stopping capture:
 1. If the user says "stop capture", "stop recording", or "leave meeting", check if you know the callId from a previous start
@@ -486,6 +487,24 @@ Example user requests:
 `;
 
 // src/capabilities/meeting-notes/meeting-notes.ts
+async function getActiveMeetingFromChat(context) {
+  try {
+    const chatId = context.conversationId;
+    if (!chatId || !context.appGraph) return null;
+    const response = await context.appGraph.call(
+      (_userId) => ({
+        method: "get",
+        path: `/chats/${encodeURIComponent(chatId)}`,
+        query: { "$select": "onlineMeetingInfo" }
+      }),
+      context.userAadId || context.userId || ""
+    );
+    const joinWebUrl = response?.onlineMeetingInfo;
+    return joinWebUrl?.joinWebUrl || null;
+  } catch {
+    return null;
+  }
+}
 var MeetingNotesCapability = class extends BaseCapability {
   name = "meeting_notes";
   createPrompt(context) {
@@ -639,31 +658,45 @@ var MeetingNotesCapability = class extends BaseCapability {
       }
     ).function(
       "start_meeting_capture",
-      "Join a Teams meeting and start real-time transcription. Requires a Teams meeting join URL.",
+      "Join a Teams meeting and start real-time transcription. If no URL is provided, the bot will try to detect the active meeting from the current chat automatically.",
       {
         type: "object",
         properties: {
           joinUrl: {
             type: "string",
-            description: "The full Teams meeting join URL (contains teams.microsoft.com or teams.live.com)"
+            description: "The full Teams meeting join URL (contains teams.microsoft.com or teams.live.com). Leave empty to auto-detect from current chat."
           },
           meetingId: {
             type: "string",
             description: "Optional custom meeting ID for tracking. Auto-generated if not provided."
           }
         },
-        required: ["joinUrl"]
+        required: []
       },
       async (args) => {
         try {
-          this.logger.debug(`Starting meeting capture for: ${args.joinUrl.substring(0, 50)}...`);
-          if (!args.joinUrl.includes("teams.microsoft.com") && !args.joinUrl.includes("teams.live.com")) {
+          let joinUrl = args.joinUrl?.trim() || "";
+          if (!joinUrl) {
+            this.logger.debug("No joinUrl provided \u2014 checking chat for active meeting...");
+            joinUrl = await getActiveMeetingFromChat(context) || "";
+            if (!joinUrl) {
+              return JSON.stringify({
+                success: false,
+                error: "No active meeting found",
+                message: "No meeting URL provided and no active meeting was detected in this chat. Please share the Teams meeting join link."
+              });
+            }
+            this.logger.debug(`Auto-detected meeting URL from chat: ${joinUrl.substring(0, 60)}...`);
+          }
+          this.logger.debug(`Starting meeting capture for: ${joinUrl.substring(0, 50)}...`);
+          if (!joinUrl.includes("teams.microsoft.com") && !joinUrl.includes("teams.live.com")) {
             return JSON.stringify({
               success: false,
               error: "Invalid Teams meeting URL",
               message: "Please provide a valid Microsoft Teams meeting join URL"
             });
           }
+          args = { ...args, joinUrl };
           const client = getMeetingMediaBotClient(this.logger);
           const isAvailable = await client.checkHealth();
           if (!isAvailable) {
@@ -673,7 +706,7 @@ var MeetingNotesCapability = class extends BaseCapability {
               message: "The meeting capture service is not running. Please try again later."
             });
           }
-          const result = await client.startMeetingCapture(args.joinUrl);
+          const result = await client.startMeetingCapture(joinUrl);
           if (!result.success || !result.callId) {
             return JSON.stringify({
               success: false,
@@ -685,7 +718,7 @@ var MeetingNotesCapability = class extends BaseCapability {
           await context.database.upsertMeeting({
             meetingId,
             conversationId: context.conversationId,
-            joinUrl: args.joinUrl,
+            joinUrl,
             title: args.meetingId ? `Meeting: ${args.meetingId}` : `Meeting capture ${(/* @__PURE__ */ new Date()).toLocaleString()}`,
             organizerAadId: context.userAadId || context.userId || "unknown"
           });
@@ -2764,6 +2797,7 @@ async function createMessageContext(storage2, activity, api, appGraph) {
 }
 
 // src/index.ts
+var autoJoinedMeetings = /* @__PURE__ */ new Map();
 var logger = new teams_common.ConsoleLogger("missa", { level: "debug" });
 var createTokenFactory = () => {
   return async (scope, tenantId) => {
@@ -2866,8 +2900,67 @@ app.on("install.add", async ({ send, activity, appGraph }) => {
 
 ` : "";
   await send(
-    "\u{1F44B} Hi! I'm **Missa**, your intelligent meeting assistant!\n\n" + historyNote + "Here's what I can do:\n\n\u{1F4DD} **Summarize** conversations and meetings\n\u2705 **Action Items** \u2014 find and track tasks from your chats\n\u{1F50D} **Search** through conversation history\n\u{1F4CB} **Meeting Notes** \u2014 get structured transcripts and summaries\n\u{1F399}\uFE0F **Join Meeting** \u2014 I can join a Teams meeting and transcribe it live\n\u23F9\uFE0F **Stop Recording** \u2014 stop live transcription and save the notes\n\nUse the command menu or @mention me with your request!"
+    "\u{1F44B} Hi! I'm **Missa**, your intelligent meeting assistant!\n\n" + historyNote + "Here's what I can do:\n\n\u{1F4DD} **Summarize** conversations and meetings\n\u2705 **Action Items** \u2014 find and track tasks from your chats\n\u{1F50D} **Search** through conversation history\n\u{1F4CB} **Meeting Notes** \u2014 get structured transcripts and summaries\n\u{1F399}\uFE0F **Auto-Join** \u2014 I automatically join meetings when they start in this chat\n\u{1F517} **Smart Join** \u2014 just say `@Missa join meeting` (no URL needed if a meeting is active)\n\u23F9\uFE0F **Stop Recording** \u2014 stop live transcription and save the notes\n\nUse the command menu or @mention me with your request!"
   );
+});
+app.on("event", async ({ activity, send }) => {
+  const eventName = activity.name;
+  if (eventName === "application/vnd.microsoft.meetingStart") {
+    const details = activity.value?.details;
+    const joinUrl = details?.joinWebUrl || details?.joinUrl;
+    const meetingTitle = details?.title || "Teams Meeting";
+    const conversationId = activity.conversation.id;
+    logger.info(`[MeetingEvent] Meeting started in ${conversationId}: "${meetingTitle}"`);
+    if (!joinUrl) {
+      logger.warn("[MeetingEvent] No joinWebUrl in meetingStart event \u2014 cannot auto-join");
+      return;
+    }
+    if (autoJoinedMeetings.has(conversationId)) {
+      logger.info(`[MeetingEvent] Already joined meeting for ${conversationId}, skipping`);
+      return;
+    }
+    try {
+      await send("\u{1F399}\uFE0F Meeting started \u2014 Missa is joining to capture the transcript...");
+      const client = getMeetingMediaBotClient(logger);
+      const result = await client.startMeetingCapture(joinUrl);
+      if (result.success && result.callId) {
+        autoJoinedMeetings.set(conversationId, result.callId);
+        logger.info(`[MeetingEvent] Auto-joined meeting, callId: ${result.callId}`);
+        await send(
+          `\u2705 I've joined **"${meetingTitle}"** and will transcribe in real-time.
+
+\u{1F4CC} **Tip:** Ask the meeting organizer to enable **Teams transcription** (meeting controls \u2192 ... \u2192 Start transcription) for best results.
+
+When the meeting ends I'll automatically leave and offer a summary.`
+        );
+      } else {
+        logger.error(`[MeetingEvent] Failed to auto-join: ${result.error}`);
+        await send(`\u26A0\uFE0F Could not auto-join the meeting: ${result.error || "Unknown error"}. You can still join manually with \`@Missa join meeting <url>\`.`);
+      }
+    } catch (err) {
+      logger.error("[MeetingEvent] Error during auto-join:", err);
+    }
+  }
+  if (eventName === "application/vnd.microsoft.meetingEnd") {
+    const conversationId = activity.conversation.id;
+    const callId = autoJoinedMeetings.get(conversationId);
+    logger.info(`[MeetingEvent] Meeting ended in ${conversationId}, callId: ${callId || "none"}`);
+    if (!callId) {
+      return;
+    }
+    try {
+      const client = getMeetingMediaBotClient(logger);
+      await client.stopMeetingCapture(callId);
+      autoJoinedMeetings.delete(conversationId);
+      logger.info(`[MeetingEvent] Left meeting ${callId} after meetingEnd event`);
+      await send(
+        "\u{1F4CB} Meeting ended \u2014 I've left and saved the transcript.\n\nUse **@Missa summarize meeting** to get a structured summary with action items, decisions, and key points."
+      );
+    } catch (err) {
+      logger.error("[MeetingEvent] Error during auto-leave:", err);
+      autoJoinedMeetings.delete(conversationId);
+    }
+  }
 });
 (async () => {
   const port = process.env.PORT || process.env.port || 3978;

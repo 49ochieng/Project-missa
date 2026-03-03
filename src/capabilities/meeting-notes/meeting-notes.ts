@@ -13,6 +13,38 @@ import {
 } from "./schema";
 
 /**
+ * Tier 3: Smart URL detection
+ * Queries the Teams chat object to find an active/linked online meeting join URL.
+ * Returns null if the chat has no associated meeting or the call fails.
+ */
+async function getActiveMeetingFromChat(context: MessageContext): Promise<string | null> {
+  try {
+    const chatId = context.conversationId;
+    if (!chatId || !context.appGraph) return null;
+
+    // GET /chats/{chatId}?$select=onlineMeetingInfo
+    // Returns onlineMeetingInfo.joinWebUrl when the chat has an active meeting
+    const response = await context.appGraph.call(
+      (_userId: string) => ({
+        method: "get" as const,
+        path: `/chats/${encodeURIComponent(chatId)}`,
+        query: { "$select": "onlineMeetingInfo" },
+      }),
+      context.userAadId || context.userId || ""
+    );
+
+    const joinWebUrl = (response as Record<string, unknown>)?.onlineMeetingInfo as
+      | { joinWebUrl?: string }
+      | undefined;
+
+    return joinWebUrl?.joinWebUrl || null;
+  } catch {
+    // Silently fail — caller will ask user for URL
+    return null;
+  }
+}
+
+/**
  * Meeting Notes Capability
  * Supports fetching meeting transcripts, generating structured summaries,
  * and distributing notes to participants via email and Teams
@@ -199,33 +231,52 @@ export class MeetingNotesCapability extends BaseCapability {
       )
       .function(
         "start_meeting_capture",
-        "Join a Teams meeting and start real-time transcription. Requires a Teams meeting join URL.",
+        "Join a Teams meeting and start real-time transcription. If no URL is provided, the bot will try to detect the active meeting from the current chat automatically.",
         {
           type: "object",
           properties: {
             joinUrl: {
               type: "string",
-              description: "The full Teams meeting join URL (contains teams.microsoft.com or teams.live.com)",
+              description: "The full Teams meeting join URL (contains teams.microsoft.com or teams.live.com). Leave empty to auto-detect from current chat.",
             },
             meetingId: {
               type: "string",
               description: "Optional custom meeting ID for tracking. Auto-generated if not provided.",
             },
           },
-          required: ["joinUrl"],
+          required: [],
         },
-        async (args: { joinUrl: string; meetingId?: string }) => {
+        async (args: { joinUrl?: string; meetingId?: string }) => {
           try {
-            this.logger.debug(`Starting meeting capture for: ${args.joinUrl.substring(0, 50)}...`);
+            let joinUrl = args.joinUrl?.trim() || "";
+
+            // Tier 3: Smart URL detection — check if this chat has an active meeting
+            if (!joinUrl) {
+              this.logger.debug("No joinUrl provided — checking chat for active meeting...");
+              joinUrl = await getActiveMeetingFromChat(context) || "";
+
+              if (!joinUrl) {
+                return JSON.stringify({
+                  success: false,
+                  error: "No active meeting found",
+                  message: "No meeting URL provided and no active meeting was detected in this chat. Please share the Teams meeting join link.",
+                });
+              }
+              this.logger.debug(`Auto-detected meeting URL from chat: ${joinUrl.substring(0, 60)}...`);
+            }
+
+            this.logger.debug(`Starting meeting capture for: ${joinUrl.substring(0, 50)}...`);
 
             // Validate join URL format
-            if (!args.joinUrl.includes("teams.microsoft.com") && !args.joinUrl.includes("teams.live.com")) {
+            if (!joinUrl.includes("teams.microsoft.com") && !joinUrl.includes("teams.live.com")) {
               return JSON.stringify({
                 success: false,
                 error: "Invalid Teams meeting URL",
                 message: "Please provide a valid Microsoft Teams meeting join URL",
               });
             }
+
+            args = { ...args, joinUrl };
 
             const client = getMeetingMediaBotClient(this.logger);
 
@@ -240,7 +291,7 @@ export class MeetingNotesCapability extends BaseCapability {
             }
 
             // Request the meeting-media-bot to join FIRST to get the Graph callId
-            const result = await client.startMeetingCapture(args.joinUrl);
+            const result = await client.startMeetingCapture(joinUrl);
 
             if (!result.success || !result.callId) {
               return JSON.stringify({
@@ -256,7 +307,7 @@ export class MeetingNotesCapability extends BaseCapability {
             await context.database.upsertMeeting({
               meetingId,
               conversationId: context.conversationId,
-              joinUrl: args.joinUrl,
+              joinUrl,
               title: args.meetingId ? `Meeting: ${args.meetingId}` : `Meeting capture ${new Date().toLocaleString()}`,
               organizerAadId: context.userAadId || context.userId || "unknown",
             });
