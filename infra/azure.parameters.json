@@ -34,6 +34,27 @@
     },
     "sqlPassword": {
       "value": "${{SQL_PASSWORD}}"
+    },
+    "meetingMediaBotSecret": {
+      "value": "${{SECRET_MEETING_MEDIA_BOT_SECRET}}"
+    },
+    "meetingBotTenantId": {
+      "value": "${{AZURE_TENANT_ID}}"
+    },
+    "meetingBotClientId": {
+      "value": "${{SECRET_MEETING_BOT_CLIENT_ID}}"
+    },
+    "meetingBotClientSecret": {
+      "value": "${{SECRET_MEETING_BOT_CLIENT_SECRET}}"
+    },
+    "meetingBotAppId": {
+      "value": "${{BOT_APP_ID}}"
+    },
+    "azureSpeechKey": {
+      "value": "${{SECRET_AZURE_SPEECH_KEY}}"
+    },
+    "azureSpeechRegion": {
+      "value": "southcentralus"
     }
   }
 }

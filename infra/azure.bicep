@@ -12,9 +12,18 @@ param AOAI_ENDPOINT string
 param AOAI_API_KEY string
 param AOAI_MODEL string
 
-param meetingMediaBotUrl string = ''
 @secure()
 param meetingMediaBotSecret string = ''
+
+// Meeting-media-bot service params
+param meetingBotTenantId string = ''
+param meetingBotClientId string = ''
+@secure()
+param meetingBotClientSecret string = ''
+param meetingBotAppId string = ''
+@secure()
+param azureSpeechKey string = ''
+param azureSpeechRegion string = 'southcentralus'
 
 param sqlServer string
 param sqlDatabase string
@@ -24,6 +33,7 @@ param sqlPassword string
 
 param serverfarmsName string = resourceBaseName
 param webAppName string = resourceBaseName
+param meetingBotAppName string = 'meetingbot${resourceBaseName}'
 param identityName string = resourceBaseName
 param location string = resourceGroup().location
 
@@ -73,20 +83,20 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
           name: 'TENANT_ID'
           value: identity.properties.tenantId
         }
-        { 
-          name: 'BOT_TYPE' 
+        {
+          name: 'BOT_TYPE'
           value: 'UserAssignedMsi'
         }
-        { 
-          name: 'AOAI_ENDPOINT' 
+        {
+          name: 'AOAI_ENDPOINT'
           value: AOAI_ENDPOINT
         }
-        { 
-          name: 'AOAI_API_KEY' 
+        {
+          name: 'AOAI_API_KEY'
           value: AOAI_API_KEY
         }
-        { 
-          name: 'AOAI_MODEL' 
+        {
+          name: 'AOAI_MODEL'
           value: AOAI_MODEL
         }
         {
@@ -111,7 +121,7 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
         }
         {
           name: 'MEETING_MEDIA_BOT_URL'
-          value: meetingMediaBotUrl
+          value: 'https://${meetingBotApp.properties.defaultHostName}'
         }
         {
           name: 'MEETING_MEDIA_BOT_SHARED_SECRET'
@@ -129,6 +139,78 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
     type: 'UserAssigned'
     userAssignedIdentities: {
       '${identity.id}': {}
+    }
+  }
+}
+
+// Linux App Service Plan for meeting-media-bot (Linux + Windows can't share a plan)
+resource meetingBotPlan 'Microsoft.Web/serverfarms@2021-02-01' = {
+  kind: 'linux'
+  location: location
+  name: '${serverfarmsName}-linux'
+  sku: {
+    name: webAppSKU
+  }
+  properties: {
+    reserved: true // Required for Linux
+  }
+}
+
+// Meeting-media-bot App Service (joins Teams calls, transcribes meetings) — Linux
+resource meetingBotApp 'Microsoft.Web/sites@2021-02-01' = {
+  kind: 'app,linux'
+  location: location
+  name: meetingBotAppName
+  properties: {
+    serverFarmId: meetingBotPlan.id
+    httpsOnly: true
+    siteConfig: {
+      alwaysOn: true
+      linuxFxVersion: 'NODE|20-lts'
+      appCommandLine: 'node dist/index.js'
+      appSettings: [
+        {
+          name: 'AZURE_TENANT_ID'
+          value: meetingBotTenantId
+        }
+        {
+          name: 'AZURE_CLIENT_ID'
+          value: meetingBotClientId
+        }
+        {
+          name: 'AZURE_CLIENT_SECRET'
+          value: meetingBotClientSecret
+        }
+        {
+          name: 'BOT_APP_ID'
+          value: meetingBotAppId
+        }
+        {
+          name: 'BOT_ENDPOINT'
+          value: 'https://${meetingBotAppName}.azurewebsites.net'
+        }
+        {
+          name: 'AZURE_SPEECH_KEY'
+          value: azureSpeechKey
+        }
+        {
+          name: 'AZURE_SPEECH_REGION'
+          value: azureSpeechRegion
+        }
+        {
+          name: 'SHARED_SECRET'
+          value: meetingMediaBotSecret
+        }
+        {
+          name: 'PROJECT_MISSA_URL'
+          value: 'https://${webAppName}.azurewebsites.net'
+        }
+        {
+          name: 'PORT'
+          value: '8080'
+        }
+      ]
+      ftpsState: 'FtpsOnly'
     }
   }
 }
@@ -153,3 +235,5 @@ output BOT_ID string = identity.properties.clientId
 output BOT_TENANT_ID string = identity.properties.tenantId
 output SQL_SERVER_FQDN string = sqlServer
 output SQL_DATABASE_NAME string = sqlDatabase
+output MEETING_BOT_AZURE_APP_SERVICE_RESOURCE_ID string = meetingBotApp.id
+output MEETING_BOT_DOMAIN string = meetingBotApp.properties.defaultHostName
