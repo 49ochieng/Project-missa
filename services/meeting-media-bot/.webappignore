@@ -1,0 +1,7 @@
+# Exclude dev/source files from Azure zip deploy
+.env
+.env.*
+tsconfig.json
+nodemon.json
+.git
+.gitignore
