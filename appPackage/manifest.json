@@ -1,7 +1,7 @@
 {
     "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.24/MicrosoftTeams.schema.json",
     "manifestVersion": "1.24",
-    "version": "1.0.14",
+    "version": "1.0.17",
     "id": "${{TEAMS_APP_ID}}",
     "developer": {
         "name": "Armely",
@@ -22,6 +22,10 @@
         "full": "Missa is an intelligent AI meeting assistant that summarizes conversations, captures action items, and helps teams collaborate more effectively."
     },
     "accentColor": "#6264A7",
+    "webApplicationInfo": {
+        "id": "${{BOT_ID}}",
+        "resource": "https://RscBasedStoreAnywhere"
+    },
     "bots": [
         {
             "botId": "${{BOT_ID}}",
@@ -34,10 +38,6 @@
             "isNotificationOnly": false,
             "supportsCalling": true,
             "supportsVideo": false,
-            "meetingEventSubscription": {
-                "onlineMeetingStarted": true,
-                "onlineMeetingEnded": true
-            },
             "commandLists": [
                 {
                     "scopes": [
