@@ -61,8 +61,8 @@ if (config.autoJoinUserEmail || config.autoJoinUserObjectId) {
   console.log("[Calendar] Auto-join not configured (set AUTO_JOIN_USER_EMAIL or AUTO_JOIN_USER_OBJECT_ID to enable)");
 }
 
-// Start server
-const PORT = config.port;
+// Start server — use process.env.PORT directly (iisnode sets it to a named pipe on Azure)
+const PORT = process.env.PORT || config.port;
 
 app.listen(PORT, () => {
   console.log(`
@@ -70,8 +70,8 @@ app.listen(PORT, () => {
 ║            Meeting Media Bot - Started                     ║
 ╠════════════════════════════════════════════════════════════╣
 ║  Port: ${PORT.toString().padEnd(51)}║
-║  Callback URL: ${config.botEndpoint}/api/calls/callback     
-║  Health: http://localhost:${PORT}/api/health                
+║  Callback URL: ${config.botEndpoint}/api/calls/callback
+║  Health: http://localhost:${PORT}/api/health
 ╚════════════════════════════════════════════════════════════╝
 
 Available endpoints:

@@ -71,7 +71,7 @@ const configSchema: Record<keyof MeetingMediaBotConfig, ConfigSchema> = {
   },
   botEndpoint: {
     envVars: ["BOT_ENDPOINT", "PUBLIC_BASE_URL"],
-    required: true,
+    required: false,
     isSecret: false,
   },
   graphBaseUrl: {
@@ -168,6 +168,14 @@ export function loadConfig(): MeetingMediaBotConfig {
       const displayValue = schema.isSecret ? maskSecret(value) : value;
       console.log(`✓ ${configKey}: ${displayValue}`);
     }
+  }
+
+  // Auto-derive BOT_ENDPOINT from Azure's WEBSITE_HOSTNAME if not explicitly set
+  if (!config.botEndpoint && process.env.WEBSITE_HOSTNAME) {
+    config.botEndpoint = `https://${process.env.WEBSITE_HOSTNAME}`;
+    console.log(`✓ botEndpoint: ${config.botEndpoint} (auto-derived from WEBSITE_HOSTNAME)`);
+  } else if (!config.botEndpoint) {
+    errors.push("Missing required: botEndpoint (set: BOT_ENDPOINT or deploy to Azure App Service)");
   }
 
   if (errors.length > 0) {
