@@ -25,6 +25,10 @@ param meetingBotAppId string = ''
 param azureSpeechKey string = ''
 param azureSpeechRegion string = 'southcentralus'
 
+// ACS (optional — for transcription fallback)
+param enableAcs bool = false
+param acsName string = 'acs-${resourceBaseName}'
+
 param sqlServer string
 param sqlDatabase string
 param sqlUsername string
@@ -209,9 +213,26 @@ resource meetingBotApp 'Microsoft.Web/sites@2021-02-01' = {
           name: 'PORT'
           value: '8080'
         }
+        {
+          name: 'ACS_CONNECTION_STRING'
+          value: enableAcs ? communicationService.listKeys().primaryConnectionString : ''
+        }
+        {
+          name: 'COGNITIVE_SERVICES_ENDPOINT'
+          value: enableAcs ? 'https://${azureSpeechRegion}.api.cognitive.microsoft.com' : ''
+        }
       ]
       ftpsState: 'FtpsOnly'
     }
+  }
+}
+
+// Azure Communication Services (optional — for transcription fallback)
+resource communicationService 'Microsoft.Communication/communicationServices@2023-04-01' = if (enableAcs) {
+  name: acsName
+  location: 'global'
+  properties: {
+    dataLocation: 'United States'
   }
 }
 
