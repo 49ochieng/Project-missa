@@ -39,62 +39,27 @@ var mssql__namespace = /*#__PURE__*/_interopNamespace(mssql);
 var Database__default = /*#__PURE__*/_interopDefault(Database);
 var path__default = /*#__PURE__*/_interopDefault(path);
 
-// src/index.ts
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 
 // src/utils/config.ts
-var DATABASE_CONFIG = {
-  type: process.env.RUNNING_ON_AZURE === "1" ? "mssql" : "sqlite",
-  connectionString: process.env.SQL_CONNECTION_STRING,
-  server: process.env.SQL_SERVER,
-  database: process.env.SQL_DATABASE,
-  username: process.env.SQL_USERNAME,
-  password: process.env.SQL_PASSWORD,
-  sqlitePath: process.env.CONVERSATIONS_DB_PATH
-};
-var AI_MODELS = {
-  // Manager Capability - Uses lighter, faster model for routing decisions
-  MANAGER: {
-    model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o-mini",
-    apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
-    endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
-    apiVersion: "2025-04-01-preview"
-  },
-  // Summarizer Capability - Uses more capable model for complex analysis
-  SUMMARIZER: {
-    model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
-    apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
-    endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
-    apiVersion: "2025-04-01-preview"
-  },
-  // Action Items Capability - Uses capable model for analysis and task management
-  ACTION_ITEMS: {
-    model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
-    apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
-    endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
-    apiVersion: "2025-04-01-preview"
-  },
-  // Search Capability - Uses capable model for semantic search and deep linking
-  SEARCH: {
-    model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
-    apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
-    endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
-    apiVersion: "2025-04-01-preview"
-  },
-  // Meeting Notes Capability - Uses capable model for transcript analysis and structured summaries
-  MEETING_NOTES: {
-    model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
-    apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
-    endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
-    apiVersion: "2025-04-01-preview"
-  },
-  // Default model configuration (fallback)
-  DEFAULT: {
-    model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
-    apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
-    endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
-    apiVersion: "2025-04-01-preview"
-  }
-};
+var config_exports = {};
+__export(config_exports, {
+  AI_MODELS: () => AI_MODELS,
+  DATABASE_CONFIG: () => DATABASE_CONFIG,
+  getAppConfig: () => getAppConfig,
+  getModelConfig: () => getModelConfig,
+  loadConfig: () => loadConfig,
+  logModelConfigs: () => logModelConfigs,
+  validateEnvironment: () => validateEnvironment
+});
 function getModelConfig(capabilityType) {
   switch (capabilityType.toLowerCase()) {
     case "manager":
@@ -146,7 +111,6 @@ function logModelConfigs(logger2) {
   logger2.debug(`  Meeting Notes Capability: ${AI_MODELS.MEETING_NOTES.model}`);
   logger2.debug(`  Default Model: ${AI_MODELS.DEFAULT.model}`);
 }
-var appConfigInstance = null;
 function loadConfig(logger2) {
   if (appConfigInstance) {
     return appConfigInstance;
@@ -172,8 +136,68 @@ function getAppConfig() {
   }
   return appConfigInstance;
 }
+var DATABASE_CONFIG, AI_MODELS, appConfigInstance;
+var init_config = __esm({
+  "src/utils/config.ts"() {
+    DATABASE_CONFIG = {
+      type: process.env.RUNNING_ON_AZURE === "1" ? "mssql" : "sqlite",
+      connectionString: process.env.SQL_CONNECTION_STRING,
+      server: process.env.SQL_SERVER,
+      database: process.env.SQL_DATABASE,
+      username: process.env.SQL_USERNAME,
+      password: process.env.SQL_PASSWORD,
+      sqlitePath: process.env.CONVERSATIONS_DB_PATH
+    };
+    AI_MODELS = {
+      // Manager Capability - Uses lighter, faster model for routing decisions
+      MANAGER: {
+        model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o-mini",
+        apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
+        endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
+        apiVersion: "2025-04-01-preview"
+      },
+      // Summarizer Capability - Uses more capable model for complex analysis
+      SUMMARIZER: {
+        model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
+        apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
+        endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
+        apiVersion: "2025-04-01-preview"
+      },
+      // Action Items Capability - Uses capable model for analysis and task management
+      ACTION_ITEMS: {
+        model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
+        apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
+        endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
+        apiVersion: "2025-04-01-preview"
+      },
+      // Search Capability - Uses capable model for semantic search and deep linking
+      SEARCH: {
+        model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
+        apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
+        endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
+        apiVersion: "2025-04-01-preview"
+      },
+      // Meeting Notes Capability - Uses capable model for transcript analysis and structured summaries
+      MEETING_NOTES: {
+        model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
+        apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
+        endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
+        apiVersion: "2025-04-01-preview"
+      },
+      // Default model configuration (fallback)
+      DEFAULT: {
+        model: process.env.AOAI_MODEL || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4o",
+        apiKey: process.env.AOAI_API_KEY || process.env.SECRET_AZURE_OPENAI_API_KEY,
+        endpoint: process.env.AOAI_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT,
+        apiVersion: "2025-04-01-preview"
+      }
+    };
+    appConfigInstance = null;
+  }
+});
 
 // src/capabilities/capability.ts
+init_config();
 var BaseCapability = class {
   constructor(logger2) {
     this.logger = logger2;
@@ -290,6 +314,7 @@ var ACTION_ITEMS_CAPABILITY_DEFINITION = {
 };
 
 // src/services/meetingMediaBotClient.ts
+init_config();
 var MeetingMediaBotClient = class {
   logger;
   baseUrl;
@@ -414,17 +439,33 @@ var MeetingMediaBotClient = class {
   }
   /**
    * Check if the meeting-media-bot service is available
+   * Retries once after a delay to handle Azure cold starts
    */
   async checkHealth() {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/health`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5e3)
-      });
-      return response.ok;
-    } catch {
-      return false;
+    const url = `${this.baseUrl}/api/health`;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        this.logger.info(`[HealthCheck] Attempt ${attempt}: ${url}`);
+        const response = await fetch(url, {
+          method: "GET",
+          signal: AbortSignal.timeout(15e3)
+        });
+        if (response.ok) {
+          this.logger.info(`[HealthCheck] Meeting media bot is reachable`);
+          return true;
+        }
+        this.logger.warn(`[HealthCheck] HTTP ${response.status} from ${url}`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`[HealthCheck] Attempt ${attempt} failed: ${msg} (url: ${url})`);
+      }
+      if (attempt < 2) {
+        this.logger.info(`[HealthCheck] Retrying in 3s (cold start recovery)...`);
+        await new Promise((r) => setTimeout(r, 3e3));
+      }
     }
+    this.logger.error(`[HealthCheck] Meeting media bot unreachable after 2 attempts: ${url}`);
+    return false;
   }
 };
 var clientInstance = null;
@@ -700,10 +741,13 @@ var MeetingNotesCapability = class extends BaseCapability {
           const client = getMeetingMediaBotClient(this.logger);
           const isAvailable = await client.checkHealth();
           if (!isAvailable) {
+            const config = await Promise.resolve().then(() => (init_config(), config_exports));
+            const appConfig = config.getAppConfig();
+            this.logger.error(`Meeting media bot unreachable at: ${appConfig.meetingMediaBotUrl}`);
             return JSON.stringify({
               success: false,
               error: "Meeting capture service unavailable",
-              message: "The meeting capture service is not running. Please try again later."
+              message: `The meeting capture service at ${appConfig.meetingMediaBotUrl} is not responding. Please verify the service is running and try again.`
             });
           }
           const result = await client.startMeetingCapture(joinUrl);
@@ -1224,6 +1268,9 @@ var CAPABILITY_DEFINITIONS = [
   SEARCH_CAPABILITY_DEFINITION,
   MEETING_NOTES_CAPABILITY_DEFINITION
 ];
+
+// src/agent/manager.ts
+init_config();
 function finalizePromptResponse(text, context, logger2) {
   const messageActivity = new teams_api.MessageActivity(text).addAiGenerated().addFeedback();
   if (context.citations && context.citations.length > 0) {
@@ -1579,6 +1626,9 @@ router.get("/health", (_req, res) => {
   });
 });
 var meetingApi_default = router;
+
+// src/storage/storageFactory.ts
+init_config();
 var MssqlKVStore = class {
   constructor(logger2, config) {
     this.logger = logger2;
@@ -2640,6 +2690,9 @@ var StorageFactory = class {
   }
 };
 
+// src/index.ts
+init_config();
+
 // src/utils/chatHistory.ts
 function stripHtml(html) {
   return html.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").trim();
@@ -2987,6 +3040,20 @@ When the meeting ends I'll automatically leave and offer a summary.`
   }
   await app.start(port);
   logger.debug(`\u{1F680} Collab Agent started on port ${port}`);
+  const appConfig = loadConfig(logger);
+  (async () => {
+    try {
+      const meetingBotClient = getMeetingMediaBotClient(logger.child("health"));
+      const reachable = await meetingBotClient.checkHealth();
+      if (reachable) {
+        logger.info(`Meeting media bot reachable at ${appConfig.meetingMediaBotUrl}`);
+      } else {
+        logger.warn(`Meeting media bot UNREACHABLE at ${appConfig.meetingMediaBotUrl} \u2014 meeting capture will fail`);
+      }
+    } catch (err) {
+      logger.warn(`Meeting media bot health check error: ${err instanceof Error ? err.message : err}`);
+    }
+  })();
 })();
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map
