@@ -26,6 +26,10 @@ export interface MeetingMediaBotConfig {
   projectMissaUrl: string;
   sharedSecret: string;
 
+  // Azure Communication Services (optional - for transcription fallback)
+  acsConnectionString: string | null;
+  cognitiveServicesEndpoint: string | null;
+
   // Server
   port: number;
 
@@ -100,6 +104,16 @@ const configSchema: Record<keyof MeetingMediaBotConfig, ConfigSchema> = {
     required: true,
     isSecret: true,
   },
+  acsConnectionString: {
+    envVars: ["ACS_CONNECTION_STRING"],
+    required: false,
+    isSecret: true,
+  },
+  cognitiveServicesEndpoint: {
+    envVars: ["COGNITIVE_SERVICES_ENDPOINT"],
+    required: false,
+    isSecret: false,
+  },
   port: {
     envVars: ["PORT"],
     required: false,
@@ -150,7 +164,7 @@ export function loadConfig(): MeetingMediaBotConfig {
     if (!value || value === "") {
       if (schema.required) {
         errors.push(`Missing required: ${configKey} (set: ${schema.envVars.join(" or ")})`);
-      } else if (configKey === "autoJoinUserEmail" || configKey === "autoJoinUserObjectId") {
+      } else if (configKey === "autoJoinUserEmail" || configKey === "autoJoinUserObjectId" || configKey === "acsConnectionString" || configKey === "cognitiveServicesEndpoint") {
         // Nullable optional fields default to null
         (config as Record<string, unknown>)[configKey] = null;
       } else if (configKey === "calendarPollIntervalMs") {

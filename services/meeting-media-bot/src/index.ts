@@ -8,6 +8,9 @@ import { loadConfig, getConfig } from "./config";
 import { startCalendarPoller, stopCalendarPoller } from "./calendar/calendarPoller";
 import callbackRoutes from "./routes/callbacks";
 import apiRoutes from "./routes/api";
+import acsCallbackRoutes from "./routes/acsCallbacks";
+import { getGraphClient } from "./graph/graphClient";
+import { initializeAcs, isAcsConfigured, shutdownAcs } from "./acs/acsTranscriber";
 
 // Load configuration first
 loadConfig();
@@ -28,6 +31,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 
 // Mount routes
 app.use("/api/calls", callbackRoutes);
+app.use("/api/acs", acsCallbackRoutes);
 app.use("/api", apiRoutes);
 
 // Root health check
@@ -82,18 +86,38 @@ Available endpoints:
   POST /api/calls/callback        - Graph notification webhook
   GET  /api/health                - Health check
 `);
+
+  // Initialize ACS transcription if configured (optional)
+  if (isAcsConfigured()) {
+    initializeAcs(8081);
+    console.log("[Startup] ACS transcription fallback enabled");
+  } else {
+    console.log("[Startup] ACS transcription not configured (optional — set ACS_CONNECTION_STRING to enable)");
+  }
+
+  // Non-blocking: verify Graph API credentials on startup
+  getGraphClient().testConnection().then(result => {
+    if (result.success) {
+      console.log("[Startup] Graph API connection verified");
+    } else {
+      console.error(`[Startup] Graph API connection FAILED: ${result.error}`);
+      console.error("[Startup] Meeting join will fail until credentials are fixed");
+    }
+  });
 });
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("[Server] SIGTERM received, shutting down gracefully...");
   stopCalendarPoller();
+  shutdownAcs();
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
   console.log("[Server] SIGINT received, shutting down gracefully...");
   stopCalendarPoller();
+  shutdownAcs();
   process.exit(0);
 });
 
