@@ -132,7 +132,14 @@ export async function joinMeeting(
   );
 
   if (!response.success || !response.data) {
-    console.error(`[CallManager] Failed to join meeting: ${response.error}`);
+    console.error(`[CallManager] Failed to join meeting: ${response.error} (HTTP ${response.statusCode})`);
+    console.error(`[CallManager] Callback URI was: ${callbackUri}`);
+    console.error(`[CallManager] Join URL: ${joinUrl.substring(0, 80)}...`);
+    if (response.statusCode === 403) {
+      console.error(`[CallManager] 403 Forbidden — check Azure AD app has Calls.JoinGroupCall.All permission with admin consent`);
+    } else if (response.statusCode === 404) {
+      console.error(`[CallManager] 404 — the meeting URL may be invalid or meeting may have ended`);
+    }
     return {
       success: false,
       error: response.error || "Failed to join meeting",

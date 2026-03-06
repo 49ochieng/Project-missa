@@ -206,6 +206,31 @@ export class GraphClient {
     }
     return `HTTP ${statusCode}`;
   }
+
+  /**
+   * Test Graph API connectivity and credentials
+   * Returns true if the token is valid and Graph is reachable
+   */
+  async testConnection(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const token = await this.getAccessToken();
+      if (!token) {
+        return { success: false, error: "Failed to acquire access token" };
+      }
+
+      // Verify token by calling a lightweight endpoint
+      const result = await this.request("GET", "/v1.0/organization?$select=id");
+      if (result.success) {
+        console.log("[GraphClient] Connection test passed");
+        return { success: true };
+      }
+
+      return { success: false, error: result.error || "Organization query failed" };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { success: false, error: msg };
+    }
+  }
 }
 
 // Singleton instance
