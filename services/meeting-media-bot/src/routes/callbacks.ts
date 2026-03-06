@@ -5,7 +5,8 @@
 
 import { Router, Request, Response } from "express";
 import { updateCallState, CallResource, getJoinUrl } from "../graph/callManager";
-import { startTranscriptPolling, stopTranscriptPolling } from "../graph/transcriptPoller";
+import { startTranscriptPolling, stopTranscriptPolling, isPollingActive } from "../graph/transcriptPoller";
+import { isAcsConfigured, startAcsTranscription } from "../acs/acsTranscriber";
 import { getConfig } from "../config";
 
 const router = Router();
@@ -58,9 +59,9 @@ async function sendStatusToProjectMissa(
 }
 
 /**
- * Handle call established - start transcript polling
+ * Handle call established - start transcript polling, with ACS fallback
  */
-async function handleCallEstablished(callId: string): Promise<void> {
+async function handleCallEstablished(callId: string, serverCallId?: string): Promise<void> {
   console.log(`[Callbacks] Call established: ${callId}`);
 
   await sendStatusToProjectMissa(callId, "joined");
@@ -79,8 +80,28 @@ async function handleCallEstablished(callId: string): Promise<void> {
     await sendStatusToProjectMissa(callId, "transcribing");
   } else {
     console.warn(`[Callbacks] Transcript polling unavailable: ${result.message}`);
-    // Notify Project Missa with instructions for user
     await sendStatusToProjectMissa(callId, "joined", result.message);
+  }
+
+  // ACS fallback: if ACS is configured and transcript polling didn't find a transcript,
+  // try ACS transcription after 30 seconds
+  if (isAcsConfigured() && serverCallId) {
+    setTimeout(async () => {
+      // Check if transcript polling has found anything
+      if (!isPollingActive(callId)) {
+        console.log(`[Callbacks] Transcript polling inactive for ${callId} — skipping ACS fallback`);
+        return;
+      }
+
+      console.log(`[Callbacks] Checking if ACS fallback is needed for ${callId}...`);
+      const acsResult = await startAcsTranscription(callId, serverCallId);
+      if (acsResult.success) {
+        console.log(`[Callbacks] ACS transcription fallback started for ${callId}`);
+        await sendStatusToProjectMissa(callId, "transcribing_acs");
+      } else {
+        console.warn(`[Callbacks] ACS fallback failed: ${acsResult.message}`);
+      }
+    }, 30000);
   }
 }
 
@@ -138,10 +159,13 @@ router.post("/callback", async (req: Request, res: Response) => {
     // Update local call state
     updateCallState(callId, callData);
 
+    // Extract serverCallId if available (needed for ACS fallback)
+    const serverCallId = (callData as unknown as Record<string, unknown>).serverCallId as string | undefined;
+
     // Handle state transitions
     switch (state) {
       case "established":
-        await handleCallEstablished(callId);
+        await handleCallEstablished(callId, serverCallId);
         break;
 
       case "terminated":

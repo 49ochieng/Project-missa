@@ -5,7 +5,7 @@
 
 import { Router, Request, Response, NextFunction } from "express";
 import { joinMeeting, leaveCall, getCall, getActiveCalls, isCallActive } from "../graph/callManager";
-import { getTranscriber, removeTranscriber } from "../speech/transcriber";
+import { stopTranscriptPolling } from "../graph/transcriptPoller";
 import { getConfig } from "../config";
 
 const router = Router();
@@ -88,8 +88,8 @@ router.post("/meetings/leave", verifySharedSecret, async (req: Request, res: Res
   }
 
   try {
-    // Stop transcriber first
-    removeTranscriber(callId);
+    // Stop transcript polling first
+    stopTranscriptPolling(callId);
 
     // Leave the call
     const result = await leaveCall(callId);
@@ -129,7 +129,6 @@ router.get("/meetings/:callId/status", verifySharedSecret, (req: Request, res: R
   console.log(`[API] Status request for call: ${callId}`);
 
   const call = getCall(callId);
-  const transcriber = getTranscriber(callId);
 
   if (!call) {
     res.status(404).json({ error: "Call not found" });
@@ -140,7 +139,6 @@ router.get("/meetings/:callId/status", verifySharedSecret, (req: Request, res: R
     callId,
     state: call.state,
     isActive: isCallActive(callId),
-    isTranscribing: transcriber?.getIsRunning() || false,
     myParticipantId: call.myParticipantId,
   });
 });
@@ -156,12 +154,10 @@ router.get("/meetings/active", verifySharedSecret, (_req: Request, res: Response
   const meetings = [];
 
   for (const [callId, call] of activeCalls) {
-    const transcriber = getTranscriber(callId);
     meetings.push({
       callId,
       state: call.state,
       isActive: isCallActive(callId),
-      isTranscribing: transcriber?.getIsRunning() || false,
     });
   }
 
@@ -173,35 +169,20 @@ router.get("/meetings/active", verifySharedSecret, (_req: Request, res: Response
 
 /**
  * POST /api/meetings/:callId/stop-transcription
- * Stop transcription without leaving the meeting
+ * Stop transcript polling without leaving the meeting
  */
-router.post("/meetings/:callId/stop-transcription", verifySharedSecret, async (req: Request, res: Response) => {
+router.post("/meetings/:callId/stop-transcription", verifySharedSecret, (req: Request, res: Response) => {
   const { callId } = req.params;
 
   console.log(`[API] Stop transcription request for call: ${callId}`);
 
-  const transcriber = getTranscriber(callId);
+  stopTranscriptPolling(callId);
 
-  if (!transcriber) {
-    res.status(404).json({ error: "Transcriber not found for this call" });
-    return;
-  }
-
-  try {
-    await transcriber.stop();
-    
-    res.json({
-      success: true,
-      callId,
-      status: "transcription_stopped",
-    });
-  } catch (error) {
-    console.error(`[API] Error stopping transcription:`, error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
+  res.json({
+    success: true,
+    callId,
+    status: "transcription_stopped",
+  });
 });
 
 /**
