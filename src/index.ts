@@ -291,4 +291,20 @@ app.on("event", async ({ activity, send }) => {
   await app.start(port);
 
   logger.debug(`🚀 Collab Agent started on port ${port}`);
+
+  // Non-blocking startup check: verify meeting-media-bot connectivity
+  const appConfig = loadConfig(logger);
+  (async () => {
+    try {
+      const meetingBotClient = getMeetingMediaBotClient(logger.child("health"));
+      const reachable = await meetingBotClient.checkHealth();
+      if (reachable) {
+        logger.info(`Meeting media bot reachable at ${appConfig.meetingMediaBotUrl}`);
+      } else {
+        logger.warn(`Meeting media bot UNREACHABLE at ${appConfig.meetingMediaBotUrl} — meeting capture will fail`);
+      }
+    } catch (err) {
+      logger.warn(`Meeting media bot health check error: ${err instanceof Error ? err.message : err}`);
+    }
+  })();
 })();

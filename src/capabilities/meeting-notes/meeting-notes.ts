@@ -280,13 +280,16 @@ export class MeetingNotesCapability extends BaseCapability {
 
             const client = getMeetingMediaBotClient(this.logger);
 
-            // Check if meeting-media-bot is available
+            // Check if meeting-media-bot is available (retries internally for cold starts)
             const isAvailable = await client.checkHealth();
             if (!isAvailable) {
+              const config = await import("../../utils/config");
+              const appConfig = config.getAppConfig();
+              this.logger.error(`Meeting media bot unreachable at: ${appConfig.meetingMediaBotUrl}`);
               return JSON.stringify({
                 success: false,
                 error: "Meeting capture service unavailable",
-                message: "The meeting capture service is not running. Please try again later.",
+                message: `The meeting capture service at ${appConfig.meetingMediaBotUrl} is not responding. Please verify the service is running and try again.`,
               });
             }
 

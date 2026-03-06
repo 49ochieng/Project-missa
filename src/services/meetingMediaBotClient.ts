@@ -171,17 +171,33 @@ export class MeetingMediaBotClient {
 
   /**
    * Check if the meeting-media-bot service is available
+   * Retries once after a delay to handle Azure cold starts
    */
   async checkHealth(): Promise<boolean> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/health`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
-      return response.ok;
-    } catch {
-      return false;
+    const url = `${this.baseUrl}/api/health`;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        this.logger.info(`[HealthCheck] Attempt ${attempt}: ${url}`);
+        const response = await fetch(url, {
+          method: "GET",
+          signal: AbortSignal.timeout(15000),
+        });
+        if (response.ok) {
+          this.logger.info(`[HealthCheck] Meeting media bot is reachable`);
+          return true;
+        }
+        this.logger.warn(`[HealthCheck] HTTP ${response.status} from ${url}`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`[HealthCheck] Attempt ${attempt} failed: ${msg} (url: ${url})`);
+      }
+      if (attempt < 2) {
+        this.logger.info(`[HealthCheck] Retrying in 3s (cold start recovery)...`);
+        await new Promise(r => setTimeout(r, 3000));
+      }
     }
+    this.logger.error(`[HealthCheck] Meeting media bot unreachable after 2 attempts: ${url}`);
+    return false;
   }
 }
 
